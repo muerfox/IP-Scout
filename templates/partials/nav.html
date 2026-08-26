@@ -1,0 +1,24 @@
+{% for node in nav_tree %}
+  {% if node.items %}
+    <div class="nav-section">
+      <div class="nav-section-label">{{ node.label }}</div>
+      {% for item in node.items %}
+        {% if item.url_name %}
+          <a class="nav-item{% if request.resolver_match.view_name == item.url_name %} active{% endif %}"
+             href="{% url item.url_name %}">{{ item.label }}</a>
+        {% else %}
+          <span class="nav-item disabled">{{ item.label }}</span>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="nav-section">
+      {% if node.url_name %}
+        <a class="nav-item{% if request.resolver_match.view_name == node.url_name %} active{% endif %}"
+           href="{% url node.url_name %}">{{ node.label }}</a>
+      {% else %}
+        <span class="nav-item disabled">{{ node.label }}</span>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endfor %}

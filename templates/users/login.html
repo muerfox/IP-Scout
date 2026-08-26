@@ -1,0 +1,28 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in — IP Scout</title>
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="brand">IP <span>SCOUT</span></div>
+      <form method="post">
+        {% csrf_token %}
+        <label for="id_username">Username</label>
+        <input type="text" name="username" id="id_username" autofocus required>
+        <label for="id_password">Password</label>
+        <input type="password" name="password" id="id_password" required>
+        {% if form.errors %}
+          <div class="auth-error">Invalid username or password.</div>
+        {% endif %}
+        <button type="submit">Sign in</button>
+        <input type="hidden" name="next" value="{{ next }}">
+      </form>
+    </div>
+  </div>
+</body>
+</html>

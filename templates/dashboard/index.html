@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — IP Scout{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+
+{% block content %}
+  <h1>503 Overview <span class="subtitle">last 24 hours</span></h1>
+
+  <div class="stat-grid">
+    {% for card in stat_cards %}
+      <div class="stat-card">
+        <div class="stat-label">{{ card.label }}</div>
+        <div class="stat-value{% if card.value is None %} pending{% endif %}">
+          {% if card.value is None %}pending{% else %}{{ card.value }}{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="panel-note">
+    Foundation build (Phase 1). Log ingestion, IP/WHOIS intelligence, Iran
+    CIDR matching, charts and the world map land in later phases — these
+    cards will populate once <code>apps.incidents</code>, <code>apps.ips</code>
+    and <code>apps.whois</code> are implemented.
+  </div>
+{% endblock %}
