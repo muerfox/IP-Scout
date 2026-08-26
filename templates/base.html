@@ -25,10 +25,27 @@
         </div>
       </div>
       <main>
+        {% if messages %}
+          <ul class="messages">
+            {% for message in messages %}
+              <li class="{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
         {% block content %}{% endblock %}
       </main>
     </div>
   </div>
+  <script>
+    // HTMX doesn't know about Django's CSRF cookie by default - attach it
+    // to every htmx request the same way Django's own JS examples do.
+    document.body.addEventListener('htmx:configRequest', function (event) {
+      const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+      if (match) {
+        event.detail.headers['X-CSRFToken'] = decodeURIComponent(match[1]);
+      }
+    });
+  </script>
   {% block extra_body %}{% endblock %}
 </body>
 </html>

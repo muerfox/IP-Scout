@@ -15,4 +15,5 @@ CELERY_TASK_EAGER_PROPAGATES = True
 REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []  # noqa: F405
 
 WHOIS_BINARY = "/usr/bin/whois"  # noqa: F405
-SSH_CREDENTIAL_ENCRYPTION_KEY = "test-key-not-for-production-use-only-32b"  # noqa: F405
+# Fixed test-only Fernet key (must be valid: 32 url-safe base64 bytes).
+SSH_CREDENTIAL_ENCRYPTION_KEY = "NnoRYXW2HCoNNQfvq6cLLoAz4OH__-_DyNQPpBD0MZA="  # noqa: F405

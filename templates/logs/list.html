@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Log Sources — IP Scout{% endblock %}
+{% block topbar_title %}Log Sources{% endblock %}
+
+{% block content %}
+  <h1>Log Sources <span class="subtitle">across all servers</span></h1>
+
+  {% if log_sources %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Monitor</th>
+          <th>Server</th>
+          <th>Path</th>
+          <th>Format</th>
+          <th>Reader</th>
+          <th>Last event</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log_source in log_sources %}
+          {% include "logs/partials/log_source_row.html" with show_server=True %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No log sources yet. Add a server and run log discovery from its detail page.</div>
+  {% endif %}
+{% endblock %}

@@ -21,6 +21,9 @@ redis>=5.0
 # SSH connectivity to monitored servers
 paramiko>=3.4
 
+# Application-level encryption for stored SSH credentials
+cryptography>=42.0
+
 # Config / utilities
 python-dotenv>=1.0
 gunicorn>=22.0

@@ -1,0 +1,15 @@
+<tr id="log-source-row-{{ log_source.pk }}">
+  <td>
+    <form method="post" action="{% url 'logs:toggle-enabled' log_source.pk %}"
+          hx-post="{% url 'logs:toggle-enabled' log_source.pk %}"
+          hx-target="#log-source-row-{{ log_source.pk }}" hx-swap="outerHTML">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm">{% if log_source.enabled %}Monitoring{% else %}Enable{% endif %}</button>
+    </form>
+  </td>
+  {% if show_server %}<td><a href="{% url 'servers:detail' log_source.server_id %}">{{ log_source.server.name }}</a></td>{% endif %}
+  <td class="mono">{{ log_source.path }}</td>
+  <td>{{ log_source.format }}</td>
+  <td><span class="status-dot {{ log_source.reader_status }}"></span>{{ log_source.reader_status }}</td>
+  <td>{{ log_source.last_event_at|default:"—" }}</td>
+</tr>

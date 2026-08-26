@@ -16,27 +16,46 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 1 — foundation
+## Status: Phase 2 — server/SSH management + log discovery
 
-This repository currently contains the **project foundation only** (Django
-project skeleton, settings, auth, base layout, Docker Compose). The
-ingestion/intelligence pipeline is not implemented yet. See
-[Roadmap](#roadmap) below.
+Phase 1 (foundation) and Phase 2 (servers + SSH + log discovery) are
+implemented. The incremental log reader/parser, IP intelligence, WHOIS and
+Iran CIDR pipeline are not implemented yet. See [Roadmap](#roadmap) below.
 
 Nothing in the UI or API returns fabricated data — dashboard cards that
 depend on unbuilt apps show "pending", and unbuilt nav entries are
 disabled rather than linking to pages that don't exist.
+
+Phase 2, concretely:
+
+- `Server` model (SSH connection details; the private key/password is
+  encrypted at rest via `apps.common.fields.EncryptedTextField`, a Fernet
+  field keyed by `SSH_CREDENTIAL_ENCRYPTION_KEY`).
+- `apps.servers.services.SSHService` — a small, fixed set of operations
+  (`test_connection`, `discover_logs`, `stat_log`) over paramiko. No
+  arbitrary-command execution; log discovery uses SFTP `listdir_attr`
+  rather than shell globbing.
+- "Test Connection" and "Rescan Logs" enqueue Celery tasks
+  (`apps.servers.tasks`) on the `maintenance` queue, guarded by a
+  Redis-backed lock (`apps.common.locks.redis_lock`) so a slow SSH op
+  can't be triggered twice concurrently for the same server.
+- Discovery upserts `LogSource` rows (new ones start disabled — an
+  operator opts a file into monitoring from the server detail page or the
+  cross-server Log Sources list).
+- Every mutating action (add/edit/delete/enable/disable a server, toggle
+  a log source, test connection, discover logs) writes an
+  `apps.users.AuditLogEntry`.
 
 ## Project layout
 
 ```
 config/            settings (base/development/production/test), urls, celery, wsgi/asgi
 apps/
-  common/          shared abstract base model (TimeStampedModel), request-IP helper
+  common/          TimeStampedModel, EncryptedTextField, redis_lock, request-IP helper
   users/           custom User model, login/logout, audit log
   dashboard/       nav tree, dashboard views
-  servers/         SSH server inventory                (Phase 2)
-  logs/            log sources, incremental reader/parser (Phase 3)
+  servers/         Server model, SSHService, CRUD + test-connection/discovery views
+  logs/            LogSource model, cross-server list + enable toggle
   ips/             IPAddress intelligence record        (Phase 4)
   whois/           whois execution/cache/parsing        (Phase 5)
   geo/             geolocation abstraction               (Phase 8)
@@ -62,7 +81,7 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-In separate shells, once Celery tasks exist (Phase 2+):
+In separate shells, so "Test Connection" / "Rescan Logs" actually run:
 
 ```bash
 celery -A config worker -Q logs,ips,whois,iran,maintenance -l info
@@ -105,8 +124,8 @@ Nothing is hard-coded; nothing is read from `os.environ` outside
 
 Built incrementally per the project spec (section 62):
 
-1. **Foundation** (this repo) — Django/Postgres/Redis/Celery/DRF wiring, auth, base UI, Docker Compose.
-2. Server/SSH management, Nginx log/file discovery.
+1. **Foundation** — Django/Postgres/Redis/Celery/DRF wiring, auth, base UI, Docker Compose.
+2. **Server/SSH management, Nginx log/file discovery** (this repo).
 3. Incremental Nginx log reader, 503 parser, `RequestEvent`.
 4. `IPAddress` dedup + Celery IP queue + Redis locks.
 5. WHOIS service/parser/cache (7-day freshness).

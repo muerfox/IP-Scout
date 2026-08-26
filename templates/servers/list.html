@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Servers — IP Scout{% endblock %}
+{% block topbar_title %}Servers{% endblock %}
+
+{% block content %}
+  <div class="toolbar">
+    <h1>Servers</h1>
+    <a class="btn btn-primary" href="{% url 'servers:create' %}">Add Server</a>
+  </div>
+
+  {% if servers %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Name</th>
+          <th>Hostname</th>
+          <th>Auth</th>
+          <th>Log sources</th>
+          <th>Enabled</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for server in servers %}
+          <tr>
+            <td><span class="status-dot {{ server.connection_status }}"></span>{{ server.connection_status }}</td>
+            <td><a href="{% url 'servers:detail' server.pk %}">{{ server.name }}</a></td>
+            <td class="mono">{{ server.ssh_username }}@{{ server.hostname }}:{{ server.ssh_port }}</td>
+            <td>{{ server.get_ssh_auth_type_display }}</td>
+            <td class="num">{{ server.log_sources.count }}</td>
+            <td>{% if server.enabled %}yes{% else %}no{% endif %}</td>
+            <td><a class="btn btn-sm" href="{% url 'servers:detail' server.pk %}">View</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No servers configured yet. Add one to start discovering Nginx logs.</div>
+  {% endif %}
+{% endblock %}

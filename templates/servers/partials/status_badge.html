@@ -1,0 +1,7 @@
+<span id="status-badge"
+      class="badge{% if server.connection_status == 'ok' %} green{% elif server.connection_status == 'error' %} red{% endif %}"
+      hx-get="{% url 'servers:status-badge' server.pk %}"
+      hx-trigger="every 4s"
+      hx-swap="outerHTML">
+  <span class="status-dot {{ server.connection_status }}"></span>{{ server.connection_status|upper }}
+</span>

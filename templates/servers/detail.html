@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}{{ server.name }} — IP Scout{% endblock %}
+{% block topbar_title %}{{ server.name }}{% endblock %}
+
+{% block content %}
+  <div class="detail-header">
+    <h1>{{ server.name }} {% include "servers/partials/status_badge.html" %}</h1>
+    <div class="form-actions" style="margin-top:0;">
+      <form method="post" action="{% url 'servers:test-connection' server.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn" hx-post="{% url 'servers:test-connection' server.pk %}"
+                hx-target="#status-badge" hx-swap="outerHTML">Test Connection</button>
+      </form>
+      <form method="post" action="{% url 'servers:discover-logs' server.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn">Rescan Logs</button>
+      </form>
+      <a class="btn" href="{% url 'servers:update' server.pk %}">Edit</a>
+      <form method="post" action="{% url 'servers:toggle-enabled' server.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn">{% if server.enabled %}Disable{% else %}Enable{% endif %}</button>
+      </form>
+      <form method="post" action="{% url 'servers:delete' server.pk %}"
+            onsubmit="return confirm('Delete {{ server.name }} and all of its log sources?');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+  <div class="detail-meta">{{ server.ssh_username }}@{{ server.hostname }}:{{ server.ssh_port }} · {{ server.get_ssh_auth_type_display }}</div>
+
+  <div class="kv-grid">
+    <div>
+      <div class="kv-label">Last connected</div>
+      <div class="kv-value">{{ server.last_connected_at|default:"never" }}</div>
+    </div>
+    <div>
+      <div class="kv-label">Extra search paths</div>
+      <div class="kv-value">{{ server.log_search_paths|join:", "|default:"/var/log/nginx/ only" }}</div>
+    </div>
+    <div>
+      <div class="kv-label">Log sources</div>
+      <div class="kv-value">{{ log_sources|length }}</div>
+    </div>
+  </div>
+
+  {% if server.last_error %}
+    <div class="panel-note" style="border-color: var(--red); color: var(--red);">{{ server.last_error }}</div>
+  {% endif %}
+
+  <div class="section-title">Discovered Logs</div>
+  {% if log_sources %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Monitor</th>
+          <th>Path</th>
+          <th>Format</th>
+          <th>Reader</th>
+          <th>Last event</th>
+        </tr>
+      </thead>
+      <tbody id="log-source-rows">
+        {% for log_source in log_sources %}
+          {% include "logs/partials/log_source_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No logs discovered yet. Click “Rescan Logs” to scan /var/log/nginx/ and any configured extra paths.</div>
+  {% endif %}
+{% endblock %}

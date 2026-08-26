@@ -6,6 +6,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.dashboard.urls", namespace="dashboard")),
     path("accounts/", include("apps.users.urls", namespace="users")),
+    path("servers/", include("apps.servers.urls", namespace="servers")),
+    path("logs/", include("apps.logs.urls", namespace="logs")),
     path("api/v1/", include("apps.api.urls", namespace="api")),
 ]
 

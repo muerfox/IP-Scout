@@ -28,11 +28,11 @@ class NavSection:
 NAV_TREE: list[NavItem | NavSection] = [
     NavItem("Dashboard", "dashboard:index"),
     NavSection("Servers", [
-        NavItem("All Servers"),
-        NavItem("Add Server"),
+        NavItem("All Servers", "servers:list"),
+        NavItem("Add Server", "servers:create"),
     ]),
     NavSection("Logs", [
-        NavItem("Log Sources"),
+        NavItem("Log Sources", "logs:list"),
         NavItem("Readers"),
     ]),
     NavSection("IP Intelligence", [
