@@ -18,8 +18,11 @@ class AuditLogMiddleware:
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
         user = getattr(request, "user", None)
-        context.set_context(
+        token = context.set_context(
             user_id=user.id if user and user.is_authenticated else None,
             ip_address=get_client_ip(request),
         )
-        return self.get_response(request)
+        try:
+            return self.get_response(request)
+        finally:
+            context.reset_context(token)

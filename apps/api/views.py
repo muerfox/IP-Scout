@@ -64,6 +64,19 @@ class IranExportAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    def perform_content_negotiation(self, request, force=False):
+        # This view always returns a raw HttpResponse (see _export_txt/
+        # _export_csv/_export_json) and never a DRF Response, so DRF's
+        # renderer machinery is never used - but `initial()` still runs
+        # content negotiation unconditionally before get() executes, and
+        # DRF's default negotiator treats the `?format=` query param as
+        # its own renderer-selection convention (format=json works only
+        # by accident; format=txt/csv 404 before get() is ever reached,
+        # since neither is a registered renderer format). Bypass it: this
+        # view's own `?format=` (spec section 40) is unrelated to DRF's.
+        renderer = self.renderer_classes[0]()
+        return renderer, renderer.media_type
+
     def get(self, request):
         fmt = request.query_params.get("format", "txt")
         filters = ExportFilters.from_querydict(request.query_params)

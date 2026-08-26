@@ -16,12 +16,44 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 10 — full REST API + global search
+## Status: Phase 10 — full REST API + global search, verified end-to-end
 
 All nine phases of the original roadmap are implemented, plus the
 tracked gap from Phase 9: the full REST API (spec section 39), its
 example queries (section 40), and global search (section 41) - the last
 three pieces of the spec with no code behind them at all.
+
+Every phase up to this point had only ever been checked with
+`manage.py check` and a DB-free test subset - real PostgreSQL/Redis/
+whois were never available. This build now has: `migrate` run for
+real against PostgreSQL 15 (all migrations across all ten phases,
+including the custom `inet`/`cidr` fields and their lookups, applied
+cleanly); the full test suite (292 tests) run for real, not skipped;
+and a live `runserver` smoke test - session login, JWT issuance, an
+authenticated API call, and a rendered dashboard page - all against
+that same real Postgres/Redis. Three real bugs only reachable this way
+were found and fixed:
+
+- `IranExportAPIView`'s `?format=txt|csv` (spec section 40) 404'd
+  before `get()` ever ran, because DRF's default content negotiation
+  treats `?format=` as its own renderer-selection query param and had
+  no `txt`/`csv` renderer registered - only `?format=json` worked by
+  accident. Fixed by overriding `perform_content_negotiation` to skip
+  DRF's renderer selection entirely, since this view only ever returns
+  a raw `HttpResponse` it builds itself.
+- `AuditLogMiddleware` set the per-request `contextvars.ContextVar`
+  used to attribute audit log entries to the acting user, but never
+  reset it. Django's synchronous request handling reuses the same OS
+  thread (and `Context`) across requests, so on a real multi-request
+  process the value leaked into whatever ran next on that thread -
+  visible once the test suite ran against a real threaded DB backend
+  instead of being skipped. Fixed with a `contextvars.Token` returned
+  from `set_context()` and reset in a `finally` block.
+- A worker-monitoring test asserted Redis-unreachable behavior by
+  relying on the sandbox simply having no Redis at all - true until
+  now. Fixed to point at a definitely-closed port via
+  `override_settings` instead, so the test is deterministic regardless
+  of what's actually running.
 
 Nothing in the UI or API returns fabricated data — unbuilt nav entries
 are disabled rather than linking to pages that don't exist. **No
