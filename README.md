@@ -16,26 +16,55 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 3 — incremental log reader, parser, RequestEvent
+## Status: Phase 4 — full IPAddress fields + Celery IP queue
 
-Phases 1-3 are implemented: foundation, server/SSH management + log
-discovery, and now the incremental Nginx log reader/parser and 503
-`RequestEvent` pipeline. WHOIS, geolocation and Iran CIDR classification
-are not implemented yet. See [Roadmap](#roadmap) below.
+Phases 1-4 are implemented: foundation, server/SSH management + log
+discovery, the incremental Nginx log reader/parser and 503 `RequestEvent`
+pipeline, and now the complete `IPAddress` intelligence schema plus the
+Celery IP-processing queue. WHOIS execution, geolocation and Iran CIDR
+classification are not implemented yet - the columns for them exist and
+are honestly empty. See [Roadmap](#roadmap) below.
 
 Nothing in the UI or API returns fabricated data — dashboard cards that
 depend on unbuilt apps show "pending", and unbuilt nav entries are
 disabled rather than linking to pages that don't exist.
 
-Phase 3, concretely:
+Phase 4, concretely:
 
-- `apps.ips.IPAddress` — deliberately minimal for now: `address` (unique),
-  `version`, `first_seen_at`/`last_seen_at`. WHOIS/geo/Iran fields are
-  added onto this same table in Phases 4-6 (additive migrations, not a
-  rebuild). `IPIntelligenceService.record_sightings_bulk()` dedupes a
-  whole batch of sightings in a handful of queries and never regresses
-  `last_seen_at` under concurrent readers (a conditional `UPDATE ...
-  WHERE last_seen_at < %s`, not check-then-write).
+- `apps.ips.IPAddress` now carries the full spec section 12 field list -
+  geo (`country_code`/`country_name`/`continent`/`latitude`/`longitude`,
+  Phase 8), WHOIS-derived (`asn`/`organization`/`network`/`cidr`/
+  `whois_status`/`whois_checked_at`/`whois_next_check_at`/`whois_country`,
+  Phase 5) and Iran classification (`is_iran`/`iran_checked_at`/
+  `iran_match_cidr`, Phase 6) - added as an **additive migration** onto
+  the table Phase 3 created, not a rebuild.
+- `apps.common.fields.CIDRField` — Django has no built-in ORM field for
+  PostgreSQL's native `cidr` type (only `GenericIPAddressField`, which
+  maps to `inet` and rejects network/prefix notation), so this is a small
+  field of our own mapping straight to `cidr`, used here for
+  `IPAddress.cidr`/`iran_match_cidr` and reused by `apps.iran` in Phase 6
+  (spec section 5: never store IP networks as plain text).
+- `IPIntelligenceService.needs_whois_check(ip)` — the freshness rule from
+  spec section 17/58 (`whois_next_check_at` null or expired). Every IP is
+  "never checked" until Phase 5 exists, so it's always `True` today -
+  that's the correct answer, not a stub, and Phase 5's `WhoisService`
+  will call this same function before spending a `whois` process on an IP.
+- `apps.ips.tasks.process_new_ip` (queue `ips`) - the Celery IP queue
+  from spec section 14, guarded by `redis_lock("ip:process:<address>")`
+  exactly as section 36 names it. `record_sightings_bulk` dispatches it
+  once per genuinely **new** IP only, never for an IP that merely got its
+  `last_seen_at` bumped (section 14: "do not blindly enqueue another
+  request"). Right now the task does exactly what's honestly
+  possible - checks freshness and logs a clear TODO - rather than faking
+  a WHOIS/geo/Iran lookup that doesn't exist yet.
+- A read-only **IP Addresses** list (nav: IP Intelligence → IP Addresses)
+  with address search and pagination. Dashboard's WHOIS Queue card now
+  shows a real backlog count (`whois_pending_queryset().count()`); Iranian
+  IPs stays "pending" rather than a permanently-true "0", which would
+  misleadingly look like a computed result instead of "not yet classified".
+
+Prior phases, concretely:
+
 - `apps.incidents.RequestEvent` — one row per parsed **503** line only
   (spec: "the main purpose is 503"); other status codes are parsed just
   enough to be filtered out, never persisted.
@@ -73,7 +102,7 @@ apps/
   dashboard/       nav tree, dashboard views
   servers/         Server model, SSHService (test/discover/poll_log), CRUD views
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
-  ips/             IPAddress (identity/dedup only - WHOIS/geo/Iran land in Phase 4-6)
+  ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip queue, IP list
   whois/           whois execution/cache/parsing        (Phase 5)
   geo/             geolocation abstraction               (Phase 8)
   incidents/       503 RequestEvent + rollups            (rollups: Phase 8)
@@ -143,9 +172,9 @@ Built incrementally per the project spec (section 62):
 
 1. **Foundation** — Django/Postgres/Redis/Celery/DRF wiring, auth, base UI, Docker Compose.
 2. **Server/SSH management, Nginx log/file discovery**.
-3. **Incremental Nginx log reader, 503 parser, `RequestEvent`** (this repo).
-4. Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks (identity/dedup already lands in Phase 3).
-5. WHOIS service/parser/cache (7-day freshness).
+3. **Incremental Nginx log reader, 503 parser, `RequestEvent`**.
+4. **Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks** (this repo).
+5. WHOIS service/parser/cache (7-day freshness) - `IPIntelligenceService.needs_whois_check()` and the `ips` queue are already in place for this to plug into.
 6. Iran CIDR database, matching, history, monthly validation.
 7. IP detail page, 503 intelligence, timeline, exports.
 8. Dashboard charts, world map, filters.

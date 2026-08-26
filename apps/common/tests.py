@@ -1,8 +1,9 @@
 import unittest
 
+from django.core.exceptions import ValidationError
 from django.test import override_settings
 
-from apps.common.fields import EncryptedTextField
+from apps.common.fields import CIDRField, EncryptedTextField
 from apps.common.locks import LockHeldError, redis_lock
 
 
@@ -24,6 +25,30 @@ class EncryptedTextFieldTests(unittest.TestCase):
     def test_different_plaintexts_produce_different_ciphertexts(self):
         field = EncryptedTextField()
         self.assertNotEqual(field.get_prep_value("a"), field.get_prep_value("b"))
+
+
+class CIDRFieldTests(unittest.TestCase):
+    """No DB needed - exercises the field's (de)serialization directly."""
+
+    def test_normalizes_bare_host_to_slash_32(self):
+        self.assertEqual(CIDRField().get_prep_value("1.2.3.4"), "1.2.3.4/32")
+
+    def test_preserves_network_prefix(self):
+        self.assertEqual(CIDRField().get_prep_value("1.2.3.0/24"), "1.2.3.0/24")
+
+    def test_none_and_empty_string_become_none(self):
+        field = CIDRField()
+        self.assertIsNone(field.get_prep_value(None))
+        self.assertIsNone(field.get_prep_value(""))
+
+    def test_invalid_value_raises(self):
+        with self.assertRaises(ValidationError):
+            CIDRField().get_prep_value("not-a-cidr")
+
+    def test_from_db_value_stringifies_and_passes_none(self):
+        field = CIDRField()
+        self.assertEqual(field.from_db_value("1.2.3.0/24", None, None), "1.2.3.0/24")
+        self.assertIsNone(field.from_db_value(None, None, None))
 
 
 _locmem_cache = override_settings(

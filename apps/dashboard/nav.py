@@ -36,7 +36,7 @@ NAV_TREE: list[NavItem | NavSection] = [
         NavItem("Readers"),
     ]),
     NavSection("IP Intelligence", [
-        NavItem("IP Addresses"),
+        NavItem("IP Addresses", "ips:list"),
         NavItem("Countries"),
         NavItem("ASNs"),
         NavItem("WHOIS"),
