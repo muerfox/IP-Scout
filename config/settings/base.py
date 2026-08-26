@@ -267,6 +267,14 @@ INCIDENT_RETENTION_DAYS = env_int("INCIDENT_RETENTION_DAYS", 365)
 
 IRAN_CIDR_SOURCE = env_str("IRAN_CIDR_SOURCE", "static")
 
+# Used only by IRAN_CIDR_SOURCE=ripencc (apps.iran.providers.
+# RipeNccDelegatedStatsProvider) - RIPE NCC's own delegated-extended
+# stats file, freely published, no API key required.
+IRAN_RIPE_STATS_URL = env_str(
+    "IRAN_RIPE_STATS_URL", "https://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest"
+)
+IRAN_RIPE_STATS_TIMEOUT = env_int("IRAN_RIPE_STATS_TIMEOUT", 30)
+
 # "null" (default) never populates geo fields - no offline geolocation
 # dataset ships with this project (spec section 19: pluggable provider).
 # Set to "maxmind" and GEOIP_DATABASE_PATH to a real GeoLite2-City.mmdb

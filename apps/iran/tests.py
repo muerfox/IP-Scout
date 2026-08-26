@@ -11,7 +11,13 @@ from apps.ips.models import IPAddress
 
 from .forms import CountryNetworkForm
 from .models import CountryNetwork, IPCountryHistory, prefix_length_of
-from .providers import CIDREntry, IranCIDRProvider, StaticIranCIDRProvider, get_provider
+from .providers import (
+    CIDREntry,
+    IranCIDRProvider,
+    RipeNccDelegatedStatsProvider,
+    StaticIranCIDRProvider,
+    get_provider,
+)
 from .services import IranCIDRService, IranCIDRValidationService
 
 User = get_user_model()
@@ -53,10 +59,90 @@ class GetProviderTests(unittest.TestCase):
     def test_reads_from_settings_when_name_omitted(self):
         self.assertIsInstance(get_provider(), StaticIranCIDRProvider)
 
+    def test_ripencc_provider_by_name(self):
+        provider = get_provider("ripencc")
+        self.assertIsInstance(provider, RipeNccDelegatedStatsProvider)
+        self.assertEqual(provider.SOURCE, "ripencc")
+
+
+# A trimmed, synthetic (not real) RIPE NCC delegated-extended stats file,
+# covering every line shape the parser must handle correctly.
+_RIPE_STATS_FIXTURE = "\n".join(
+    [
+        "2.3|ripencc|20260825|999999|20260825|20260825+0000",
+        "ripencc|*|asn|*|50000|summary",
+        "ripencc|*|ipv4|*|900000000|summary",
+        "# a comment line, should be ignored",
+        "",
+        "ripencc|IR|ipv4|10.0.0.0|256|20200101|allocated",
+        "ripencc|IR|ipv4|10.4.0.0|512|20200101|assigned",
+        "ripencc|US|ipv4|8.8.8.0|256|20200101|allocated",
+        "ripencc|IR|ipv4|10.8.0.0|256|20200101|available",
+        "ripencc|IR|asn|12880|1|20200101|allocated",
+        "ripencc|IR|ipv6|2001:db8::|32|20200101|allocated",
+    ]
+)
+
+
+class RipeNccDelegatedStatsProviderParseTests(unittest.TestCase):
+    """Pure parsing logic - no network call, no DB."""
+
+    def test_extracts_ipv4_and_ipv6_iran_blocks(self):
+        cidrs = {entry.cidr for entry in RipeNccDelegatedStatsProvider.parse(_RIPE_STATS_FIXTURE)}
+        self.assertEqual(cidrs, {"10.0.0.0/24", "10.4.0.0/23", "2001:db8::/32"})
+
+    def test_every_entry_defaults_to_iran_country_code(self):
+        entries = RipeNccDelegatedStatsProvider.parse(_RIPE_STATS_FIXTURE)
+        self.assertTrue(entries)
+        self.assertTrue(all(entry.country_code == "IR" for entry in entries))
+
+    def test_ignores_other_countries(self):
+        cidrs = {entry.cidr for entry in RipeNccDelegatedStatsProvider.parse(_RIPE_STATS_FIXTURE)}
+        self.assertNotIn("8.8.8.0/24", cidrs)
+
+    def test_ignores_available_status(self):
+        cidrs = {entry.cidr for entry in RipeNccDelegatedStatsProvider.parse(_RIPE_STATS_FIXTURE)}
+        self.assertNotIn("10.8.0.0/24", cidrs)
+
+    def test_ignores_non_ip_record_types(self):
+        # The asn|12880 line must not surface as anything resembling a
+        # CIDR - if it did, this count would be off by one.
+        entries = RipeNccDelegatedStatsProvider.parse(_RIPE_STATS_FIXTURE)
+        self.assertEqual(len(entries), 3)
+
+    def test_malformed_line_does_not_abort_parsing(self):
+        body = _RIPE_STATS_FIXTURE + "\nripencc|IR|ipv4|not-an-ip|256|20200101|allocated"
+        cidrs = {entry.cidr for entry in RipeNccDelegatedStatsProvider.parse(body)}
+        self.assertEqual(cidrs, {"10.0.0.0/24", "10.4.0.0/23", "2001:db8::/32"})
+
+    def test_empty_body_returns_no_entries(self):
+        self.assertEqual(RipeNccDelegatedStatsProvider.parse(""), [])
+
+
+class RipeNccDelegatedStatsProviderFetchTests(unittest.TestCase):
+    """fetch() itself is mocked at the network boundary (hermetic, offline
+    test suite) - the real live fetch is exercised manually as part of
+    this project's infrastructure verification, not in the test suite."""
+
+    @patch("apps.iran.providers.urllib.request.urlopen")
+    @override_settings(IRAN_RIPE_STATS_URL="https://example.invalid/stats", IRAN_RIPE_STATS_TIMEOUT=7)
+    def test_fetches_configured_url_with_configured_timeout(self, mock_urlopen):
+        mock_urlopen.return_value.__enter__.return_value.read.return_value = (
+            _RIPE_STATS_FIXTURE.encode("utf-8")
+        )
+
+        entries = RipeNccDelegatedStatsProvider().fetch()
+
+        mock_urlopen.assert_called_once_with("https://example.invalid/stats", timeout=7)
+        self.assertEqual({e.cidr for e in entries}, {"10.0.0.0/24", "10.4.0.0/23", "2001:db8::/32"})
+
 
 class _FakeProvider:
-    def __init__(self, entries):
+    SOURCE = "manual"
+
+    def __init__(self, entries, source="manual"):
         self._entries = entries
+        self.SOURCE = source
 
     def fetch(self):
         return self._entries
@@ -163,6 +249,28 @@ class IranCIDRValidationServiceTests(TestCase):
         self.assertEqual(summary.disabled, 0)
         self.assertEqual(summary.reevaluated, 0)
 
+    def test_new_entries_tagged_with_providers_own_source(self):
+        summary = IranCIDRValidationService.run(
+            provider=_FakeProvider([CIDREntry(cidr="5.1.0.0/22")], source="ripencc")
+        )
+        self.assertEqual(summary.created, 1)
+        self.assertEqual(CountryNetwork.objects.get().source, "ripencc")
+
+    def test_does_not_disable_another_providers_entries(self):
+        """A validation run scoped to one provider's SOURCE must never
+        disable rows another provider owns just because this fetch
+        didn't report them - see IranCIDRProvider.SOURCE's docstring."""
+        CountryNetwork.objects.create(country_code="IR", cidr="5.1.0.0/22", source="manual")
+        CountryNetwork.objects.create(country_code="IR", cidr="9.9.0.0/16", source="ripencc")
+
+        summary = IranCIDRValidationService.run(provider=_FakeProvider([], source="ripencc"))
+
+        self.assertEqual(summary.disabled, 1)
+        manual_row = CountryNetwork.objects.get(cidr="5.1.0.0/22")
+        ripencc_row = CountryNetwork.objects.get(cidr="9.9.0.0/16")
+        self.assertTrue(manual_row.enabled, "a ripencc-scoped run must not touch manual entries")
+        self.assertFalse(ripencc_row.enabled)
+
 
 class ClassifyIpTaskTests(TestCase):
     def setUp(self):
@@ -238,6 +346,16 @@ class CidrViewTests(TestCase):
         network.refresh_from_db()
         self.assertFalse(network.enabled)
         self.assertEqual(response.status_code, 302)
+
+    @override_settings(IRAN_CIDR_SOURCE="static")
+    def test_note_reflects_static_source(self):
+        response = self.client.get(reverse("iran:cidrs"))
+        self.assertContains(response, "Active source: <strong>static</strong>", html=False)
+
+    @override_settings(IRAN_CIDR_SOURCE="ripencc")
+    def test_note_reflects_ripencc_source(self):
+        response = self.client.get(reverse("iran:cidrs"))
+        self.assertContains(response, "Active source: <strong>ripencc</strong>", html=False)
 
     def test_changes_list_requires_login(self):
         self.client.logout()

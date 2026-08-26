@@ -82,15 +82,60 @@ pages:
 13 new tests; 305/305 passing against the same real Postgres/Redis,
 plus a live `runserver` check that all four new pages return 200.
 
-Nothing in the UI or API returns fabricated data — unbuilt nav entries
-are disabled rather than linking to pages that don't exist. **No
-geolocation dataset or Iran CIDR data ships with this project** - this
-sandbox has no network access and no way to verify such data, and
-inventing it for security/geo-classification features would be exactly
-the kind of fake data the project rules warn against. `GEOIP_PROVIDER`
-defaults to `null`; `CountryNetwork` starts empty (see Phases 6/8). Both
-are real, pluggable, and ready for a deployment that adds a trusted
-source - see Settings → GeoIP / Iran CIDR Sources for current status.
+The async pipeline itself was then verified for real too: a real
+`celery worker` (all five named queues) and a real `celery beat`
+(`django_celery_beat`'s `DatabaseScheduler`) against the same real
+Redis broker - not `CELERY_TASK_ALWAYS_EAGER`, which is all any test
+in this repo exercises. Dispatched `process_new_ip` from a separate
+process; the worker picked it up over the broker, chained into real
+`perform_whois_lookup` / `classify_ip` / `enrich_ip` tasks, and the
+WHOIS lookup hit RIPE's actual WHOIS service and got back (and
+correctly parsed) a real registration record - with `asn` correctly
+left unset, since that particular real response had no `origin:`
+field to parse. Also let beat run long enough to fire "Poll enabled
+log sources" (every 30s) on its own schedule and confirmed the worker
+executed it. No bugs found this round - unlike the migration/test-suite
+verification and the nav-placeholder pass before it, this one held up
+end-to-end on the first try.
+
+Proving real network access was available (the WHOIS lookup above)
+prompted going back to fix something that access had actually been
+blocking: **Iran CIDR classification, the application's namesake
+feature, now has a real, working data source.**
+`apps.iran.providers.RipeNccDelegatedStatsProvider`
+(`IRAN_CIDR_SOURCE=ripencc`) fetches and parses RIPE NCC's own
+delegated-extended stats file - the registry's primary allocation
+record, freely published, no API key or account required - and
+extracts every IPv4/IPv6 block currently allocated or assigned to Iran.
+Run for real against the live file: **2,529 CIDR blocks fetched and
+persisted**, and a real address inside one of them
+(`2.57.3.1`, matched against `2.57.3.0/24`) correctly classified
+`is_iran=True` by the unmodified, already-existing classification code.
+`IRAN_CIDR_SOURCE` still defaults to `static` (an empty
+`CountryNetwork` table, populated only if an operator adds rows) rather
+than switching every deployment onto a new external network dependency
+by default - that's a deliberate choice a deployment should make, not
+something to change silently. Fixed a real bug surfaced while building
+this: `IranCIDRValidationService.run()`'s disable-stale-entries pass
+was scoped to `source="manual"` unconditionally, so a second provider's
+entries would never be disabled when the upstream feed stopped
+reporting them; it's now scoped to `provider.SOURCE`, and each provider
+declares its own (`static` -> `"manual"`, `ripencc` -> `"ripencc"`), so
+two providers' data can coexist in `CountryNetwork` without one's
+validation pass touching the other's rows. 11 new tests (offline,
+fixture-based parsing coverage - the live RIPE fetch above was a manual
+verification, not something the test suite depends on network for).
+
+Nothing in the UI or API returns fabricated data — every nav entry now
+has a real page behind it, and no result is invented when a source
+(GeoIP, WHOIS, Iran CIDR) has nothing to say. **No geolocation dataset
+ships with this project** - MaxMind's GeoLite2 requires a licensed
+account and can't be substituted with guessed-at data.
+`GEOIP_PROVIDER` defaults to `null`; a deployment that adds a real
+`GeoLite2-City.mmdb` and points `GEOIP_DATABASE_PATH` at it gets real
+geolocation with no code changes (see Settings → GeoIP). Iran CIDR
+data ships empty by default for the reason above, not a data-access
+one - see Settings → Iran CIDR Sources for current status.
 
 Phase 10, concretely:
 

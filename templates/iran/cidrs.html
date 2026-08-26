@@ -10,13 +10,21 @@
   </div>
 
   <div class="panel-note">
-    This is the "static" Iran CIDR source (<code>IRAN_CIDR_SOURCE=static</code>,
-    the default): entries here <em>are</em> the data, managed manually.
-    The monthly validation job (Celery Beat, 1st of each month) re-verifies
-    these and re-checks any IP currently flagged Iranian. A production
-    deployment with a trusted external feed can add a provider in
-    <code>apps.iran.providers</code> and point <code>IRAN_CIDR_SOURCE</code>
-    at it instead.
+    {% if iran_cidr_source == "static" %}
+      Active source: <strong>static</strong> (<code>IRAN_CIDR_SOURCE=static</code>,
+      the default) — entries here <em>are</em> the data, managed manually.
+    {% elif iran_cidr_source == "ripencc" %}
+      Active source: <strong>ripencc</strong> — entries with source
+      <code>ripencc</code> are fetched from RIPE NCC's own delegated-extended
+      stats file (the registry's primary allocation record); manually-added
+      entries (source <code>manual</code>) are left alone by that fetch.
+    {% else %}
+      Active source: <strong>{{ iran_cidr_source }}</strong>.
+    {% endif %}
+    The monthly validation job (Celery Beat, 1st of each month) re-fetches
+    from the active source, disables CIDRs it no longer reports, and
+    re-checks any IP currently flagged Iranian. See
+    <code>apps.iran.providers</code> for available sources.
   </div>
 
   {% if page_obj.object_list %}

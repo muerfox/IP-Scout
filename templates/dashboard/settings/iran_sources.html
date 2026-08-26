@@ -23,7 +23,18 @@
       themselves as the source of truth - no external feed is fetched.
       Monthly validation (1st of each month) re-verifies them against
       themselves. Add real, trusted CIDR data via
-      <a href="{% url 'iran:cidrs' %}">Iran → CIDRs</a>.
+      <a href="{% url 'iran:cidrs' %}">Iran → CIDRs</a>, or set
+      <code>IRAN_CIDR_SOURCE=ripencc</code> to fetch from RIPE NCC's own
+      delegated stats instead.
+    </div>
+  {% elif iran_cidr_source == "ripencc" %}
+    <div class="panel-note">
+      The "ripencc" provider fetches RIPE NCC's own delegated-extended
+      stats file (the registry's primary allocation record, no API key
+      required) and extracts every IPv4/IPv6 block currently allocated
+      or assigned to Iran. Monthly validation (1st of each month)
+      re-fetches it, disables any CIDR it no longer reports, and
+      re-checks every IP currently flagged Iranian.
     </div>
   {% endif %}
 {% endblock %}
