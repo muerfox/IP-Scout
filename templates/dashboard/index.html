@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Dashboard — IP Scout{% endblock %}
 {% block topbar_title %}Dashboard{% endblock %}
 
 {% block content %}
-  <h1>503 Overview <span class="subtitle">last 24 hours</span></h1>
+  <h1>503 Overview <span class="subtitle">all-time totals below; charts are time-filtered</span></h1>
 
   <div class="stat-grid">
     {% for card in stat_cards %}
@@ -17,8 +18,47 @@
     {% endfor %}
   </div>
 
-  <div class="panel-note">
-    All-time totals, not yet time-windowed — charts, filters and the
-    world map are still to come (Phase 8).
+  <div id="period-selector" class="period-selector">
+    <button type="button" data-period="1h">Last hour</button>
+    <button type="button" data-period="6h">Last 6 hours</button>
+    <button type="button" data-period="24h" class="active">Last 24 hours</button>
+    <button type="button" data-period="7d">Last 7 days</button>
+    <button type="button" data-period="30d">Last 30 days</button>
   </div>
+
+  <div class="chart-grid">
+    <div class="chart-card wide">
+      <div class="chart-title">503 Requests / Time</div>
+      <canvas id="chart-requests-over-time"></canvas>
+    </div>
+    <div class="chart-card wide">
+      <div class="chart-title">Unique IPs / Time</div>
+      <canvas id="chart-unique-ips-over-time"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Iran vs Other</div>
+      <canvas id="chart-iran-split"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">503 IPs by Country</div>
+      <canvas id="chart-countries"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Top Iranian IPs</div>
+      <canvas id="chart-top-iranian-ips"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Top Iranian CIDRs</div>
+      <canvas id="chart-top-iranian-cidrs"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Top Countries (unique IPs)</div>
+      <canvas id="chart-top-countries"></canvas>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_body %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="{% static 'js/dashboard.js' %}"></script>
 {% endblock %}

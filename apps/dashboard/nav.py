@@ -52,7 +52,7 @@ NAV_TREE: list[NavItem | NavSection] = [
         NavItem("Changes", "iran:changes"),
         NavItem("Exports", "iran:export"),
     ]),
-    NavItem("World Map"),
+    NavItem("World Map", "dashboard:map"),
     NavItem("Workers"),
     NavSection("Settings", [
         NavItem("WHOIS"),

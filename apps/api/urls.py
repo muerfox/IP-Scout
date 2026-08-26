@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.urls import include, path
 
+from . import views
 from .router import router
 
 app_name = "api"
@@ -13,5 +14,7 @@ urlpatterns = [
     path("auth/token/verify/", TokenVerifyView.as_view(), name="token-verify"),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="api:schema"), name="docs"),
+    path("dashboard/", views.DashboardDataView.as_view(), name="dashboard"),
+    path("map/", views.MapDataView.as_view(), name="map"),
     path("", include(router.urls)),
 ]

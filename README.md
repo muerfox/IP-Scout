@@ -16,57 +16,62 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 7 — IP detail page, 503 intelligence, timeline, exports
+## Status: Phase 8 — dashboard charts, world map, filters
 
-Phases 1-7 are implemented: foundation; server/SSH management + log
-discovery; the incremental Nginx log reader/parser and 503 `RequestEvent`
-pipeline; the complete `IPAddress` schema + Celery IP queue; real WHOIS
-execution; real Iran CIDR matching; and now the investigation surfaces
-that tie it all together - an IP detail page, 503-focused dashboards, and
-Iran IP exports. Geolocation and the world map are not implemented yet.
-See [Roadmap](#roadmap) below.
+Phases 1-8 are implemented: the full ingestion → intelligence pipeline
+(server discovery, log reading, IP/WHOIS/Iran/Geo enrichment), the
+investigation surfaces (IP detail, 503 intelligence, exports), and now
+the visual layer - Chart.js dashboards and an interactive Leaflet world
+map, both backed by real aggregation, both empty of data until you feed
+the pipeline real log sources. See [Roadmap](#roadmap) below.
 
-Nothing in the UI or API returns fabricated data — dashboard cards that
-depend on unbuilt apps show "pending", and unbuilt nav entries are
-disabled rather than linking to pages that don't exist. **No specific
-Iran IP ranges are bundled with this project** - this environment has no
-network access and no way to verify a dataset's accuracy, and guessing
-at CIDR blocks from memory for a feature whose entire purpose is
-classifying real IPs as Iranian would be exactly the kind of fake data
-the project rules warn against. `CountryNetwork` starts empty; an
-operator adds real, trusted ranges via **Iran → CIDRs** or `/admin`.
+Nothing in the UI or API returns fabricated data — unbuilt nav entries
+are disabled rather than linking to pages that don't exist. **No
+geolocation dataset or Iran CIDR data ships with this project** - this
+sandbox has no network access and no way to verify such data, and
+inventing it for security/geo-classification features would be exactly
+the kind of fake data the project rules warn against. `GEOIP_PROVIDER`
+defaults to `null` (no coordinates populated, so the map starts empty);
+`CountryNetwork` starts empty too (see Phase 6). Both are real,
+pluggable, and ready for a deployment that adds a trusted data source.
 
-Phase 7, concretely:
+Phase 8, concretely:
 
-- **IP detail page** (`ips:detail`, spec sections 30-31) - every
-  `IPAddress` field, recent WHOIS lookups, Iran classification history,
-  and a filterable (server/host) paginated 503 timeline with aggregate
-  stats. Force WHOIS / Recalculate Iran now redirect here instead of
-  the list.
-- **503 → Iran** (`incidents:overview`, spec section 25) - the four
-  stat cards (503 Requests, Unique 503 IPs, Iranian IPs, Iranian IP %)
-  plus a top-10 table, with a full sortable/filterable **IPs** table
-  (`incidents:ip-table`) behind "View full table" - IP, Country, ASN,
-  Organization, CIDR, 503 Count, First/Last Seen, WHOIS Last Checked,
-  Iran Status, exactly the section 25 column list. A global
-  chronological **Timeline** (`incidents:timeline`) rounds out the
-  section's three nav entries.
-- **Iran IP export** (`iran:export`, spec section 24) -
-  `apps.common.fields.GenericIPAddressField` gains an `is_contained_by`
-  lookup (PostgreSQL's `<<=` operator, the inverse of Phase 6's
-  `contains_ip`) powering the CIDR filter; `IPExportService` combines it
-  with period/server/503-only/Iran-status filters exactly as spec lists
-  them. A live preview textarea with **Copy**, plus **Download
-  TXT** (one IP per line, verified), **CSV**, and **JSON** - all sharing
-  the same filtered queryset, audit-logged.
+- **`apps.geo`** - the `GeoIPProvider` interface spec section 19 asks
+  for. `MaxMindGeoIPProvider` is real, correct code against the standard
+  `geoip2` library (lazy-imported, so it's not a hard dependency until
+  configured) reading a local GeoLite2-City `.mmdb` file
+  (`GEOIP_DATABASE_PATH`); `NullGeoIPProvider` is the honest default.
+  `enrich_ip` (queue `ips`) is now dispatched by `process_new_ip` for
+  every new IP - the very last Phase 4 TODO is resolved, so all three
+  intelligence sources (WHOIS, Iran, Geo) fire together.
+- **Dashboard charts** (spec section 27) - `DashboardAnalyticsService`
+  computes all seven series (503s and unique IPs over time with
+  adaptive DB-side bucketing, countries, Iran/Other/Unknown split, top
+  Iranian IPs, top Iranian CIDRs, top countries) for a period (1h/6h/
+  24h/7d/30d/custom) via `/api/v1/dashboard/`; Chart.js renders them
+  client-side in the project's black/white/gray palette (red reserved
+  for Iran/503-specific series, everything else grayscale).
+- **World map** (spec sections 28-29) - `MapAggregationService` never
+  sends one marker per IP: below zoom 8 it returns grid-rounded cluster
+  points (count only), at or above it individual IPs with full popup
+  detail (country, ASN, org, 503 count, last seen, Iran status, a "View
+  IP" link) via `/api/v1/map/`. Status filter (All/503/Iran/Non-Iran/
+  Unknown, default `503` per spec's emphasis) plus the same time
+  periods as the dashboard. Leaflet renders it on a clean, minimal light
+  basemap; red markers are Iranian, green are everything else.
+- `/api/v1/dashboard/` and `/api/v1/map/` are real DRF endpoints (spec
+  section 39) - the first two pieces of the full REST API, which is
+  otherwise still a gap; see [Roadmap](#roadmap).
 
 Prior phases, briefly: server/SSH management with encrypted credentials
-and Nginx log discovery (Phase 2); an incremental log reader that never
-re-downloads a whole file and a configurable Nginx log parser feeding
-503-only `RequestEvent` rows (Phase 3); the full `IPAddress` schema and
-the Celery IP queue (Phase 4); real WHOIS execution with a 7-day cache
-(Phase 5); real Iran CIDR matching, history, and monthly validation
-(Phase 6). See each phase's commit message for the full detail.
+and Nginx log discovery (Phase 2); an incremental log reader and
+configurable parser feeding 503-only `RequestEvent` rows (Phase 3); the
+full `IPAddress` schema and Celery IP queue (Phase 4); real WHOIS
+execution with a 7-day cache (Phase 5); real Iran CIDR matching, history,
+and monthly validation (Phase 6); the IP detail page, 503 intelligence
+dashboards, and Iran IP export (Phase 7). See each phase's commit
+message for the full detail.
 
 ## Project layout
 
@@ -80,10 +85,10 @@ apps/
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
   ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip queue, IP list + detail
   whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup
-  geo/             geolocation abstraction               (Phase 8)
-  incidents/       RequestEvent, 503 Overview/IPs/Timeline views      (rollups: Phase 8)
+  geo/             GeoIPProvider (null/maxmind), GeoIPService, enrich_ip
+  incidents/       RequestEvent, 503 Overview/IPs/Timeline views      (rollups: still open)
   iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation, export
-  api/             DRF router, JWT auth endpoints
+  api/             JWT auth, /dashboard/ + /map/ endpoints  (full REST API: still open, see Roadmap)
 templates/         base layout + per-app templates
 static/            CSS (NOC black/white/gray theme)
 docker/            nginx.conf for the reverse-proxy service
@@ -155,9 +160,10 @@ Built incrementally per the project spec (section 62):
 4. **Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks**.
 5. **WHOIS service/parser/cache (7-day freshness)**.
 6. **Iran CIDR database, matching, history, monthly validation**.
-7. **IP detail page, 503 intelligence, timeline, exports** (this repo).
-8. Dashboard charts, world map, filters - GeoIP (`IPAddress.latitude`/`longitude`/`country_*`) is the remaining unpopulated piece of the schema.
+7. **IP detail page, 503 intelligence, timeline, exports**.
+8. **Dashboard charts, world map, filters** (this repo) - including `apps.geo`'s GeoIP provider abstraction, since the map needs coordinates.
 9. Retention/purge, worker monitoring, audit log surfacing, production deployment docs.
+10. *(tracked gap, not in the original 9-phase roadmap)* The full REST API from spec section 39 - ViewSets/serializers for servers, log sources, IPs, 503 events, Iran CIDRs/exports, workers, with filtering/search/ordering/pagination. Only `/api/v1/auth/`, `/api/v1/dashboard/`, and `/api/v1/map/` exist today; everything else in this repo is web-UI-only.
 
 ## Production deployment
 

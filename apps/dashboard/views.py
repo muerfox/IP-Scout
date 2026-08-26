@@ -10,8 +10,9 @@ from apps.servers.models import Server
 
 @login_required
 def index(request):
-    # All totals below are all-time, not time-windowed - time filters are
-    # Phase 8 (dashboard charts).
+    # Stat cards are all-time totals; the charts below them are the
+    # time-filtered view (spec section 27), fetched client-side from
+    # /api/v1/dashboard/.
     stat_cards = [
         {"label": "503 Requests", "value": RequestEvent.objects.count()},
         {"label": "Unique IPs", "value": IPAddress.objects.count()},
@@ -21,3 +22,10 @@ def index(request):
         {"label": "WHOIS Queue", "value": IPIntelligenceService.whois_pending_queryset().count()},
     ]
     return render(request, "dashboard/index.html", {"stat_cards": stat_cards})
+
+
+@login_required
+def world_map(request):
+    """Static shell - all data is fetched client-side from /api/v1/map/
+    (spec sections 28-29)."""
+    return render(request, "dashboard/map.html")

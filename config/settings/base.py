@@ -261,6 +261,13 @@ INCIDENT_RETENTION_DAYS = env_int("INCIDENT_RETENTION_DAYS", 365)
 
 IRAN_CIDR_SOURCE = env_str("IRAN_CIDR_SOURCE", "static")
 
+# "null" (default) never populates geo fields - no offline geolocation
+# dataset ships with this project (spec section 19: pluggable provider).
+# Set to "maxmind" and GEOIP_DATABASE_PATH to a real GeoLite2-City.mmdb
+# to enable real lookups.
+GEOIP_PROVIDER = env_str("GEOIP_PROVIDER", "null")
+GEOIP_DATABASE_PATH = env_str("GEOIP_DATABASE_PATH", "")
+
 # SSH credential encryption key (Fernet). Generate with:
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 SSH_CREDENTIAL_ENCRYPTION_KEY = env_str("SSH_CREDENTIAL_ENCRYPTION_KEY", "")

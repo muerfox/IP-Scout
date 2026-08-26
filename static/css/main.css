@@ -299,3 +299,46 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .search-bar input:focus { outline: none; border-color: var(--green); }
 
 .pagination { display: flex; gap: 6px; align-items: center; margin-top: 16px; color: var(--text-dim); font-size: 13px; }
+
+/* Period selector */
+.period-selector { display: flex; gap: 6px; margin: 16px 0; }
+.period-selector button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.period-selector button.active { color: var(--text); border-color: var(--green); }
+.period-selector button:hover { color: var(--text); }
+
+/* Charts */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+.chart-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px 16px;
+}
+.chart-card .chart-title {
+  color: var(--text-dim);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.chart-card canvas { max-height: 260px; }
+.chart-card.wide { grid-column: 1 / -1; }
+
+/* World map */
+#map-container { height: 640px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.map-toolbar { display: flex; gap: 8px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+.map-legend { display: flex; gap: 16px; align-items: center; font-size: 12px; color: var(--text-dim); margin-left: auto; }
+.map-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }

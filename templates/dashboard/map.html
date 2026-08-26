@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}World Map — IP Scout{% endblock %}
+{% block topbar_title %}World Map{% endblock %}
+
+{% block content %}
+  <h1>World Map</h1>
+
+  <div class="map-toolbar">
+    <div class="period-selector" id="map-status-selector">
+      <button type="button" data-status="503" class="active">503</button>
+      <button type="button" data-status="all">All</button>
+      <button type="button" data-status="iran">Iran</button>
+      <button type="button" data-status="non_iran">Non-Iran</button>
+      <button type="button" data-status="unknown">Unknown</button>
+    </div>
+    <div class="period-selector" id="map-period-selector">
+      <button type="button" data-period="1h">1h</button>
+      <button type="button" data-period="6h">6h</button>
+      <button type="button" data-period="24h" class="active">24h</button>
+      <button type="button" data-period="7d">7d</button>
+      <button type="button" data-period="30d">30d</button>
+    </div>
+    <div class="map-legend">
+      <span><span class="dot" style="background:var(--red);"></span>Iran</span>
+      <span><span class="dot" style="background:var(--green);"></span>Other</span>
+    </div>
+  </div>
+
+  <div id="map-container" data-ip-detail-base="{% url 'ips:detail' 0 %}"></div>
+
+  <div class="panel-note">
+    Points are server-side aggregated (spec section 29) - grid-clustered
+    at low zoom, individual IPs with full detail once you zoom in.
+    Coordinates only exist for IPs GeoIP has enriched
+    (<code>GEOIP_PROVIDER</code>); with the default "null" provider this
+    map is empty until a real provider is configured.
+  </div>
+{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+
+{% block extra_body %}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="{% static 'js/map.js' %}"></script>
+{% endblock %}

@@ -24,6 +24,10 @@ paramiko>=3.4
 # Application-level encryption for stored SSH credentials
 cryptography>=42.0
 
+# GeoIP (MaxMind .mmdb reader) - optional at runtime; only imported when
+# GEOIP_PROVIDER=maxmind is configured with a real database file
+geoip2>=4.8
+
 # Config / utilities
 python-dotenv>=1.0
 gunicorn>=22.0
