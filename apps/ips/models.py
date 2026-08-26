@@ -52,6 +52,7 @@ class IPAddress(TimeStampedModel):
     whois_checked_at = models.DateTimeField(null=True, blank=True)
     whois_next_check_at = models.DateTimeField(null=True, blank=True)
     whois_country = models.CharField(max_length=2, blank=True)
+    whois_error = models.TextField(blank=True)
 
     # -- Iran classification (apps.iran, Phase 6)
     is_iran = models.BooleanField(default=False)

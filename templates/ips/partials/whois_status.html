@@ -1,0 +1,11 @@
+<td id="whois-cell-{{ ip.pk }}"
+    hx-get="{% url 'ips:whois-status-cell' ip.pk %}"
+    hx-trigger="every 5s"
+    hx-swap="outerHTML">
+  <span class="status-dot {% if ip.whois_status == 'ok' %}ok{% elif ip.whois_status == 'error' %}error{% else %}pending{% endif %}"></span>{{ ip.get_whois_status_display }}
+  <form method="post" action="{% url 'ips:force-whois' ip.pk %}" style="display:inline;"
+        hx-post="{% url 'ips:force-whois' ip.pk %}" hx-target="#whois-cell-{{ ip.pk }}" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-sm" title="{% if ip.whois_error %}{{ ip.whois_error }}{% endif %}">Force</button>
+  </form>
+</td>

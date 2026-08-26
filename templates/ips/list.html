@@ -35,7 +35,7 @@
             </td>
             <td>{{ ip.country_code|default:"—" }}</td>
             <td>{{ ip.asn|default:"—" }}</td>
-            <td><span class="status-dot {% if ip.whois_status == 'ok' %}ok{% elif ip.whois_status == 'error' %}error{% else %}pending{% endif %}"></span>{{ ip.get_whois_status_display }}</td>
+            {% include "ips/partials/whois_status.html" %}
             <td>{{ ip.first_seen_at }}</td>
             <td>{{ ip.last_seen_at }}</td>
           </tr>

@@ -16,81 +16,58 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 4 — full IPAddress fields + Celery IP queue
+## Status: Phase 5 — WHOIS service, parser, and 7-day cache
 
-Phases 1-4 are implemented: foundation, server/SSH management + log
+Phases 1-5 are implemented: foundation, server/SSH management + log
 discovery, the incremental Nginx log reader/parser and 503 `RequestEvent`
-pipeline, and now the complete `IPAddress` intelligence schema plus the
-Celery IP-processing queue. WHOIS execution, geolocation and Iran CIDR
-classification are not implemented yet - the columns for them exist and
-are honestly empty. See [Roadmap](#roadmap) below.
+pipeline, the complete `IPAddress` intelligence schema + Celery IP queue,
+and now real WHOIS execution feeding that schema. Geolocation and Iran
+CIDR classification are not implemented yet - the columns for them exist
+and are honestly empty. See [Roadmap](#roadmap) below.
 
 Nothing in the UI or API returns fabricated data — dashboard cards that
 depend on unbuilt apps show "pending", and unbuilt nav entries are
 disabled rather than linking to pages that don't exist.
 
-Phase 4, concretely:
+Phase 5, concretely:
 
-- `apps.ips.IPAddress` now carries the full spec section 12 field list -
-  geo (`country_code`/`country_name`/`continent`/`latitude`/`longitude`,
-  Phase 8), WHOIS-derived (`asn`/`organization`/`network`/`cidr`/
-  `whois_status`/`whois_checked_at`/`whois_next_check_at`/`whois_country`,
-  Phase 5) and Iran classification (`is_iran`/`iran_checked_at`/
-  `iran_match_cidr`, Phase 6) - added as an **additive migration** onto
-  the table Phase 3 created, not a rebuild.
-- `apps.common.fields.CIDRField` — Django has no built-in ORM field for
-  PostgreSQL's native `cidr` type (only `GenericIPAddressField`, which
-  maps to `inet` and rejects network/prefix notation), so this is a small
-  field of our own mapping straight to `cidr`, used here for
-  `IPAddress.cidr`/`iran_match_cidr` and reused by `apps.iran` in Phase 6
-  (spec section 5: never store IP networks as plain text).
-- `IPIntelligenceService.needs_whois_check(ip)` — the freshness rule from
-  spec section 17/58 (`whois_next_check_at` null or expired). Every IP is
-  "never checked" until Phase 5 exists, so it's always `True` today -
-  that's the correct answer, not a stub, and Phase 5's `WhoisService`
-  will call this same function before spending a `whois` process on an IP.
-- `apps.ips.tasks.process_new_ip` (queue `ips`) - the Celery IP queue
-  from spec section 14, guarded by `redis_lock("ip:process:<address>")`
-  exactly as section 36 names it. `record_sightings_bulk` dispatches it
-  once per genuinely **new** IP only, never for an IP that merely got its
-  `last_seen_at` bumped (section 14: "do not blindly enqueue another
-  request"). Right now the task does exactly what's honestly
-  possible - checks freshness and logs a clear TODO - rather than faking
-  a WHOIS/geo/Iran lookup that doesn't exist yet.
-- A read-only **IP Addresses** list (nav: IP Intelligence → IP Addresses)
-  with address search and pagination. Dashboard's WHOIS Queue card now
-  shows a real backlog count (`whois_pending_queryset().count()`); Iranian
-  IPs stays "pending" rather than a permanently-true "0", which would
-  misleadingly look like a computed result instead of "not yet classified".
+- `apps.whois.WhoisService` — the Linux `whois` binary run via
+  `subprocess.run([binary, ip], ...)`, never `shell=True`, the address
+  validated with `ipaddress.ip_address()` before it's ever passed to the
+  binary (spec sections 15, 43). Prefers `settings.WHOIS_BINARY` but
+  falls back to a `PATH` lookup if that path doesn't exist. Distinguishes
+  retryable failures (timeout, couldn't spawn the process) from
+  non-retryable ones (invalid input, empty response) so the task layer
+  knows what's worth retrying.
+- `apps.whois.parsers` — registry-agnostic: every `key: value` line is
+  parsed into `{key: [values]}` with no assumption about which keys are
+  present (WHOIS formats vary enormously between ARIN/RIPE/APNIC/
+  LACNIC/AFRINIC and national registries), then a small alias table
+  extracts the canonical fields spec section 16 names (inetnum, netname,
+  country, organization, descr, origin, route, mnt_by, abuse_email)
+  across those registries' different naming conventions.
+- `apps.whois.WhoisRecord` — one row per completed lookup that actually
+  returned a response, raw text preserved verbatim alongside the parsed
+  data (spec: "raw WHOIS data is valuable for future parser
+  improvements"). A failed attempt has no response worth keeping, so it's
+  recorded on `IPAddress.whois_status`/`whois_error` instead.
+- `perform_whois_lookup` (queue `whois`) applies the 7-day freshness
+  cache (`WHOIS_CACHE_DAYS`) via `whois_next_check_at`, retries
+  transient failures with exponential backoff (max 3, spec section 18),
+  and is guarded by `redis_lock("whois:<address>")` so only one lookup
+  per IP ever runs at a time (section 36). `apps.ips.tasks.process_new_ip`
+  now actually dispatches this - the Phase 4 TODO is resolved.
+- **Force WHOIS** button on the IP Addresses list (spec sections 45-46):
+  bypasses the freshness gate but still respects the lock, and is
+  audit-logged. The WHOIS column live-polls via HTMX.
 
-Prior phases, concretely:
-
-- `apps.incidents.RequestEvent` — one row per parsed **503** line only
-  (spec: "the main purpose is 503"); other status codes are parsed just
-  enough to be filtered out, never persisted.
-- `SSHService.poll_log()` (spec section 9/43's `read_log`/`stat_log`
-  merged into one composite operation, since the reader always needs
-  both): stats the file via a fixed `stat -c '%i %s %Y'` (the SFTP
-  protocol itself doesn't expose inode numbers), detects rotation by
-  inode change, and range-reads only the new bytes via SFTP `seek()` -
-  never re-downloads a whole file. The **first** poll of a newly-enabled
-  log source skips straight to the current end-of-file rather than
-  backfilling potentially huge historical content.
-- `apps.logs.parsers.NginxLogParser` — compiles an nginx `log_format`
-  string (with `$variables`) into a regex at runtime. `LogSource.format`
-  can be a built-in preset (`combined`, `combined_host`,
-  `combined_timed`) or any raw `log_format` string - genuinely
-  configurable, not a fixed enum.
-- `apps.logs.services.NginxLogReader` — orchestrates one poll: only
-  advances `byte_offset` past complete (`\n`-terminated) lines, so a
-  line nginx is still writing is safely re-read combined with what gets
-  appended next poll. Malformed lines are counted and skipped, not
-  fatal.
-- Celery: `poll_log_source` (queue `logs`, `apps.logs.tasks`) is guarded
-  by `redis_lock("logreader:<server_id>:<log_source_id>")`;
-  `poll_all_log_sources` fans it out to every enabled log source and is
-  seeded as a django-celery-beat `PeriodicTask` (every 30s, editable at
-  `/admin/django_celery_beat/periodictask/`) by a data migration.
+Prior phases, briefly: server/SSH management with encrypted credentials
+and Nginx log discovery (Phase 2); an incremental log reader that never
+re-downloads a whole file and a configurable Nginx log parser feeding
+503-only `RequestEvent` rows (Phase 3); the full `IPAddress` schema and
+the `ip:process:<address>`-locked Celery queue that dispatches
+intelligence work for genuinely new IPs (Phase 4). See each phase's
+commit message for the full detail.
 
 ## Project layout
 
@@ -103,7 +80,7 @@ apps/
   servers/         Server model, SSHService (test/discover/poll_log), CRUD views
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
   ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip queue, IP list
-  whois/           whois execution/cache/parsing        (Phase 5)
+  whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup
   geo/             geolocation abstraction               (Phase 8)
   incidents/       503 RequestEvent + rollups            (rollups: Phase 8)
   iran/            Iran CIDR database + matching         (Phase 6)
@@ -115,7 +92,10 @@ docker/            nginx.conf for the reverse-proxy service
 
 ## Local development (without Docker)
 
-Requires a local PostgreSQL and Redis instance.
+Requires a local PostgreSQL and Redis instance, and the `whois` binary
+for the Celery worker that runs `perform_whois_lookup` (`apt install
+whois` on Debian/Ubuntu; the Docker image already includes it - see
+`Dockerfile`).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -173,9 +153,9 @@ Built incrementally per the project spec (section 62):
 1. **Foundation** — Django/Postgres/Redis/Celery/DRF wiring, auth, base UI, Docker Compose.
 2. **Server/SSH management, Nginx log/file discovery**.
 3. **Incremental Nginx log reader, 503 parser, `RequestEvent`**.
-4. **Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks** (this repo).
-5. WHOIS service/parser/cache (7-day freshness) - `IPIntelligenceService.needs_whois_check()` and the `ips` queue are already in place for this to plug into.
-6. Iran CIDR database, matching, history, monthly validation.
+4. **Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks**.
+5. **WHOIS service/parser/cache (7-day freshness)** (this repo).
+6. Iran CIDR database, matching, history, monthly validation - `apps.common.fields.CIDRField` is already in place for `CountryNetwork.cidr`.
 7. IP detail page, 503 intelligence, timeline, exports.
 8. Dashboard charts, world map, filters.
 9. Retention/purge, worker monitoring, audit log surfacing, production deployment docs.

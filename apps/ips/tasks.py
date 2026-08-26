@@ -1,10 +1,9 @@
 """Celery IP queue (spec sections 13-14, 36).
 
-process_new_ip is the single entry point Phase 5/6/8 will extend to
-actually dispatch WHOIS/geo/Iran work. Right now none of that exists, so
-this task does exactly what's honestly possible today: guard against
-duplicate concurrent processing for the same IP, and record whether
-intelligence enrichment is still needed. It does not fake a WHOIS lookup.
+process_new_ip is the single entry point for new-IP intelligence
+enrichment. It now dispatches apps.whois's WHOIS lookup (Phase 5); Iran
+CIDR matching (Phase 6) and GeoIP enrichment (Phase 8) are the remaining
+TODOs here.
 """
 from __future__ import annotations
 
@@ -31,13 +30,12 @@ def process_new_ip(ip_id: int) -> None:
     try:
         with redis_lock(lock_key, timeout=300):
             if IPIntelligenceService.needs_whois_check(ip):
-                # TODO(Phase 5): dispatch apps.whois.tasks.perform_whois_lookup
-                # here once the whois app exists. TODO(Phase 6/8): same for
-                # Iran CIDR matching and GeoIP enrichment.
-                logger.info(
-                    "process_new_ip: %s needs intelligence enrichment "
-                    "(WHOIS/geo/Iran - not yet implemented)",
-                    ip.address,
-                )
+                # Imported lazily to avoid a module-level import cycle
+                # (apps.whois.tasks imports apps.ips.models/services).
+                from apps.whois.tasks import perform_whois_lookup
+
+                perform_whois_lookup.delay(ip.id)
+            # TODO(Phase 6): dispatch Iran CIDR matching.
+            # TODO(Phase 8): dispatch GeoIP enrichment.
     except LockHeldError:
         logger.info("process_new_ip: %s already being processed, skipping", ip.address)
