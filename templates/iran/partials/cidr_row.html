@@ -1,0 +1,15 @@
+<tr id="cidr-row-{{ network.pk }}">
+  <td>{{ network.country_code }}</td>
+  <td class="mono">{{ network.cidr }}</td>
+  <td>{{ network.network|default:"—" }}</td>
+  <td>{{ network.source }}</td>
+  <td>
+    <form method="post" action="{% url 'iran:cidr-toggle-enabled' network.pk %}"
+          hx-post="{% url 'iran:cidr-toggle-enabled' network.pk %}"
+          hx-target="#cidr-row-{{ network.pk }}" hx-swap="outerHTML">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm">{% if network.enabled %}Enabled{% else %}Disabled{% endif %}</button>
+    </form>
+  </td>
+  <td>{{ network.last_verified_at|default:"never" }}</td>
+</tr>

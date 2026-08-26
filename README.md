@@ -16,58 +16,63 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 5 — WHOIS service, parser, and 7-day cache
+## Status: Phase 6 — Iran CIDR database, matching, history, monthly validation
 
-Phases 1-5 are implemented: foundation, server/SSH management + log
-discovery, the incremental Nginx log reader/parser and 503 `RequestEvent`
-pipeline, the complete `IPAddress` intelligence schema + Celery IP queue,
-and now real WHOIS execution feeding that schema. Geolocation and Iran
-CIDR classification are not implemented yet - the columns for them exist
-and are honestly empty. See [Roadmap](#roadmap) below.
+Phases 1-6 are implemented: foundation; server/SSH management + log
+discovery; the incremental Nginx log reader/parser and 503 `RequestEvent`
+pipeline; the complete `IPAddress` schema + Celery IP queue; real WHOIS
+execution; and now real Iran CIDR matching feeding `IPAddress.is_iran`.
+Geolocation is not implemented yet. See [Roadmap](#roadmap) below.
 
 Nothing in the UI or API returns fabricated data — dashboard cards that
 depend on unbuilt apps show "pending", and unbuilt nav entries are
-disabled rather than linking to pages that don't exist.
+disabled rather than linking to pages that don't exist. **No specific
+Iran IP ranges are bundled with this project** - this environment has no
+network access and no way to verify a dataset's accuracy, and guessing
+at CIDR blocks from memory for a feature whose entire purpose is
+classifying real IPs as Iranian would be exactly the kind of fake data
+the project rules warn against. `CountryNetwork` starts empty; an
+operator adds real, trusted ranges via **Iran → CIDRs** or `/admin`.
 
-Phase 5, concretely:
+Phase 6, concretely:
 
-- `apps.whois.WhoisService` — the Linux `whois` binary run via
-  `subprocess.run([binary, ip], ...)`, never `shell=True`, the address
-  validated with `ipaddress.ip_address()` before it's ever passed to the
-  binary (spec sections 15, 43). Prefers `settings.WHOIS_BINARY` but
-  falls back to a `PATH` lookup if that path doesn't exist. Distinguishes
-  retryable failures (timeout, couldn't spawn the process) from
-  non-retryable ones (invalid input, empty response) so the task layer
-  knows what's worth retrying.
-- `apps.whois.parsers` — registry-agnostic: every `key: value` line is
-  parsed into `{key: [values]}` with no assumption about which keys are
-  present (WHOIS formats vary enormously between ARIN/RIPE/APNIC/
-  LACNIC/AFRINIC and national registries), then a small alias table
-  extracts the canonical fields spec section 16 names (inetnum, netname,
-  country, organization, descr, origin, route, mnt_by, abuse_email)
-  across those registries' different naming conventions.
-- `apps.whois.WhoisRecord` — one row per completed lookup that actually
-  returned a response, raw text preserved verbatim alongside the parsed
-  data (spec: "raw WHOIS data is valuable for future parser
-  improvements"). A failed attempt has no response worth keeping, so it's
-  recorded on `IPAddress.whois_status`/`whois_error` instead.
-- `perform_whois_lookup` (queue `whois`) applies the 7-day freshness
-  cache (`WHOIS_CACHE_DAYS`) via `whois_next_check_at`, retries
-  transient failures with exponential backoff (max 3, spec section 18),
-  and is guarded by `redis_lock("whois:<address>")` so only one lookup
-  per IP ever runs at a time (section 36). `apps.ips.tasks.process_new_ip`
-  now actually dispatches this - the Phase 4 TODO is resolved.
-- **Force WHOIS** button on the IP Addresses list (spec sections 45-46):
-  bypasses the freshness gate but still respects the lock, and is
-  audit-logged. The WHOIS column live-polls via HTMX.
+- `apps.common.fields.CIDRField` now has a `contains_ip` lookup
+  registered on it: `CountryNetwork.objects.filter(cidr__contains_ip=ip)`
+  compiles to PostgreSQL's native `cidr >>= %s::inet` containment
+  operator (verified against a real query - see the commit) - spec
+  section 21 explicitly forbids a Python `ip.startswith(...)` check, and
+  this doesn't do one.
+- `apps.iran.CountryNetwork` / `IPCountryHistory` — the spec section
+  20/22 schema exactly. `classify()` only opens/closes a history row on
+  an actual transition (became Iranian, stopped being Iranian, or its
+  matched CIDR changed) - "Which Iranian IPs are no longer Iranian?" is
+  a direct query (`valid_until__isnull=False`), not a derived guess.
+- `apps.iran.providers.IranCIDRProvider` — the pluggable source
+  interface spec section 23 asks for, selected via `IRAN_CIDR_SOURCE`
+  (never hard-coded into matching/validation logic). The default
+  `static` provider treats `CountryNetwork` rows themselves as the
+  source of truth (no external fetch); a deployment with a trusted feed
+  implements a provider against it and points the setting there.
+- `IranCIDRService.classify(ip)` — most-specific-prefix match wins,
+  `ip:iran_match_cidr` and `is_iran` persisted, history updated only on
+  change. `IranCIDRValidationService.run()` is the full monthly workflow
+  (fetch → upsert → disable removed entries → re-evaluate every
+  currently-Iranian IP, skipped entirely when nothing actually changed).
+- Celery: `classify_ip` (queue `iran`, `redis_lock("iran:<address>")`)
+  is now dispatched by `process_new_ip` for every new IP - the last
+  Phase 4 TODO is resolved. `run_monthly_iran_validation` is seeded as a
+  django-celery-beat `PeriodicTask` (1st of each month).
+- UI: **Iran → CIDRs** (add/enable/disable), **Iran → Changes** (the
+  history table), **Iran → Iranian IPs** (the IP list filtered
+  `is_iran=true`), and a **Recalculate Iran** button per IP - spec
+  section 45's manual action, audit-logged like Force WHOIS.
 
 Prior phases, briefly: server/SSH management with encrypted credentials
 and Nginx log discovery (Phase 2); an incremental log reader that never
 re-downloads a whole file and a configurable Nginx log parser feeding
 503-only `RequestEvent` rows (Phase 3); the full `IPAddress` schema and
-the `ip:process:<address>`-locked Celery queue that dispatches
-intelligence work for genuinely new IPs (Phase 4). See each phase's
-commit message for the full detail.
+the Celery IP queue (Phase 4); real WHOIS execution with a 7-day cache
+(Phase 5). See each phase's commit message for the full detail.
 
 ## Project layout
 
@@ -83,7 +88,7 @@ apps/
   whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup
   geo/             geolocation abstraction               (Phase 8)
   incidents/       503 RequestEvent + rollups            (rollups: Phase 8)
-  iran/            Iran CIDR database + matching         (Phase 6)
+  iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation
   api/             DRF router, JWT auth endpoints
 templates/         base layout + per-app templates
 static/            CSS (NOC black/white/gray theme)
@@ -154,9 +159,9 @@ Built incrementally per the project spec (section 62):
 2. **Server/SSH management, Nginx log/file discovery**.
 3. **Incremental Nginx log reader, 503 parser, `RequestEvent`**.
 4. **Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks**.
-5. **WHOIS service/parser/cache (7-day freshness)** (this repo).
-6. Iran CIDR database, matching, history, monthly validation - `apps.common.fields.CIDRField` is already in place for `CountryNetwork.cidr`.
-7. IP detail page, 503 intelligence, timeline, exports.
+5. **WHOIS service/parser/cache (7-day freshness)**.
+6. **Iran CIDR database, matching, history, monthly validation** (this repo).
+7. IP detail page, 503 intelligence, timeline, exports - Iran IP export filters/downloads specifically land here per spec section 24.
 8. Dashboard charts, world map, filters.
 9. Retention/purge, worker monitoring, audit log surfacing, production deployment docs.
 

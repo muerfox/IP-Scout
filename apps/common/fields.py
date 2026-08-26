@@ -77,3 +77,21 @@ class CIDRField(models.Field):
         if value is None or value == "":
             return None
         return str(value)
+
+
+@CIDRField.register_lookup
+class ContainsIP(models.Lookup):
+    """`CountryNetwork.objects.filter(cidr__contains_ip="5.1.1.1")` -
+    PostgreSQL's native `>>=` network-containment operator (spec section
+    21: "Use PostgreSQL network operators rather than Python string
+    manipulation... Do NOT do ip.startswith(...)"). The right-hand side
+    goes through CIDRField.get_prep_value like any other value, so a bare
+    host address becomes "x.x.x.x/32" before being cast to `inet`.
+    """
+
+    lookup_name = "contains_ip"
+
+    def as_sql(self, compiler, connection):
+        lhs_sql, lhs_params = self.process_lhs(compiler, connection)
+        rhs_sql, rhs_params = self.process_rhs(compiler, connection)
+        return f"{lhs_sql} >>= {rhs_sql}::inet", lhs_params + rhs_params

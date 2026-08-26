@@ -1,0 +1,11 @@
+<td id="iran-cell-{{ ip.pk }}"
+    hx-get="{% url 'ips:iran-status-cell' ip.pk %}"
+    hx-trigger="every 6s"
+    hx-swap="outerHTML">
+  {% if ip.is_iran %}<span class="badge red" title="{{ ip.iran_match_cidr }}">IR</span>{% else %}—{% endif %}
+  <form method="post" action="{% url 'ips:recalculate-iran' ip.pk %}" style="display:inline;"
+        hx-post="{% url 'ips:recalculate-iran' ip.pk %}" hx-target="#iran-cell-{{ ip.pk }}" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-sm">Recalc</button>
+  </form>
+</td>

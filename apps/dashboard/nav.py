@@ -47,9 +47,9 @@ NAV_TREE: list[NavItem | NavSection] = [
         NavItem("Timeline"),
     ]),
     NavSection("Iran", [
-        NavItem("Iranian IPs"),
-        NavItem("CIDRs"),
-        NavItem("Changes"),
+        NavItem("Iranian IPs", "iran:iranian-ips"),
+        NavItem("CIDRs", "iran:cidrs"),
+        NavItem("Changes", "iran:changes"),
         NavItem("Exports"),
     ]),
     NavItem("World Map"),

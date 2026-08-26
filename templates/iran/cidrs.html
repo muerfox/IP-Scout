@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Iran CIDRs — IP Scout{% endblock %}
+{% block topbar_title %}Iran CIDRs{% endblock %}
+
+{% block content %}
+  <div class="toolbar">
+    <h1>Iran CIDRs <span class="subtitle">{{ page_obj.paginator.count }} total</span></h1>
+    <a class="btn btn-primary" href="{% url 'iran:cidr-add' %}">Add CIDR</a>
+  </div>
+
+  <div class="panel-note">
+    This is the "static" Iran CIDR source (<code>IRAN_CIDR_SOURCE=static</code>,
+    the default): entries here <em>are</em> the data, managed manually.
+    The monthly validation job (Celery Beat, 1st of each month) re-verifies
+    these and re-checks any IP currently flagged Iranian. A production
+    deployment with a trusted external feed can add a provider in
+    <code>apps.iran.providers</code> and point <code>IRAN_CIDR_SOURCE</code>
+    at it instead.
+  </div>
+
+  {% if page_obj.object_list %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Country</th>
+          <th>CIDR</th>
+          <th>Network</th>
+          <th>Source</th>
+          <th>Enabled</th>
+          <th>Last verified</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for network in page_obj.object_list %}
+          {% include "iran/partials/cidr_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">No Iran CIDR entries yet. Add one to start classifying IPs.</div>
+  {% endif %}
+{% endblock %}

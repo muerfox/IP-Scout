@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Iran Changes — IP Scout{% endblock %}
+{% block topbar_title %}Iran Changes{% endblock %}
+
+{% block content %}
+  <h1>Iran Classification Changes <span class="subtitle">{{ page_obj.paginator.count }} total</span></h1>
+  <div class="panel-note">
+    Every period an IP was classified Iranian. An open row (no "until")
+    is a currently-Iranian IP; a closed row is one that stopped matching -
+    a CIDR was disabled or replaced (spec: "Which Iranian IPs are no
+    longer Iranian?").
+  </div>
+
+  {% if page_obj.object_list %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>IP</th>
+          <th>CIDR matched</th>
+          <th>Source</th>
+          <th>From</th>
+          <th>Until</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in page_obj.object_list %}
+          <tr>
+            <td class="mono">{{ entry.ip.address }}</td>
+            <td class="mono">{{ entry.cidr|default:"—" }}</td>
+            <td>{{ entry.source }}</td>
+            <td>{{ entry.valid_from }}</td>
+            <td>{{ entry.valid_until|default:"—" }}</td>
+            <td>
+              {% if entry.valid_until %}<span class="badge">no longer Iranian</span>
+              {% else %}<span class="badge red">currently Iranian</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">No classification changes recorded yet.</div>
+  {% endif %}
+{% endblock %}

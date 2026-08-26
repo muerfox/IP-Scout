@@ -15,9 +15,15 @@ def ip_list(request):
     if query:
         queryset = queryset.filter(address__icontains=query)
 
+    is_iran = request.GET.get("is_iran")
+    if is_iran == "true":
+        queryset = queryset.filter(is_iran=True)
+
     paginator = Paginator(queryset, 50)
     page_obj = paginator.get_page(request.GET.get("page"))
-    return render(request, "ips/list.html", {"page_obj": page_obj, "query": query})
+    return render(
+        request, "ips/list.html", {"page_obj": page_obj, "query": query, "is_iran": is_iran}
+    )
 
 
 @login_required
@@ -40,4 +46,25 @@ def force_whois(request, pk):
 
     if request.headers.get("HX-Request"):
         return render(request, "ips/partials/whois_status.html", {"ip": ip})
+    return redirect("ips:list")
+
+
+@login_required
+def iran_status_cell(request, pk):
+    ip = get_object_or_404(IPAddress, pk=pk)
+    return render(request, "ips/partials/iran_status.html", {"ip": ip})
+
+
+@login_required
+@require_POST
+def recalculate_iran(request, pk):
+    ip = get_object_or_404(IPAddress, pk=pk)
+
+    from apps.iran.tasks import classify_ip
+
+    classify_ip.delay(ip.id)
+    record_audit_log("ip.iran_recalculated", obj=ip)
+
+    if request.headers.get("HX-Request"):
+        return render(request, "ips/partials/iran_status.html", {"ip": ip})
     return redirect("ips:list")

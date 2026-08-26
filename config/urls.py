@@ -9,6 +9,7 @@ urlpatterns = [
     path("servers/", include("apps.servers.urls", namespace="servers")),
     path("logs/", include("apps.logs.urls", namespace="logs")),
     path("ips/", include("apps.ips.urls", namespace="ips")),
+    path("iran/", include("apps.iran.urls", namespace="iran")),
     path("api/v1/", include("apps.api.urls", namespace="api")),
 ]
 

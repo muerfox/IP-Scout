@@ -168,6 +168,13 @@ class ProcessNewIpTaskTests(TestCase):
         mock_lock.side_effect = LockHeldError(f"ip:process:{self.ip.address}")
         process_new_ip(self.ip.id)
 
+    @patch("apps.iran.tasks.classify_ip.delay")
+    def test_dispatches_iran_classification_unconditionally(self, mock_classify_delay):
+        from .tasks import process_new_ip
+
+        process_new_ip(self.ip.id)
+        mock_classify_delay.assert_called_once_with(self.ip.id)
+
 
 class IpListViewTests(TestCase):
     def setUp(self):
@@ -190,3 +197,38 @@ class IpListViewTests(TestCase):
         response = self.client.get(reverse("ips:list"), {"q": "1.2.3"})
         self.assertContains(response, "1.2.3.4")
         self.assertNotContains(response, "5.6.7.8")
+
+    def test_is_iran_filter(self):
+        IPAddress.objects.create(
+            address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0, is_iran=True
+        )
+        IPAddress.objects.create(address="5.6.7.8", version=4, first_seen_at=T0, last_seen_at=T0)
+        response = self.client.get(reverse("ips:list"), {"is_iran": "true"})
+        self.assertContains(response, "1.2.3.4")
+        self.assertNotContains(response, "5.6.7.8")
+
+
+class RecalculateIranViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.post(reverse("ips:recalculate-iran", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    @patch("apps.iran.tasks.classify_ip.delay")
+    def test_enqueues_and_redirects(self, mock_delay):
+        response = self.client.post(reverse("ips:recalculate-iran", args=[self.ip.pk]))
+        mock_delay.assert_called_once_with(self.ip.id)
+        self.assertRedirects(response, reverse("ips:list"))
+
+    @patch("apps.iran.tasks.classify_ip.delay")
+    def test_htmx_request_returns_partial(self, mock_delay):
+        response = self.client.post(
+            reverse("ips:recalculate-iran", args=[self.ip.pk]), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "iran-cell")

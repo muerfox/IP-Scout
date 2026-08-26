@@ -4,10 +4,16 @@
 {% block topbar_title %}IP Addresses{% endblock %}
 
 {% block content %}
-  <h1>IP Addresses <span class="subtitle">{{ page_obj.paginator.count }} total</span></h1>
+  <h1>IP Addresses <span class="subtitle">{{ page_obj.paginator.count }} total{% if is_iran == "true" %} · Iranian only{% endif %}</span></h1>
 
   <form method="get" class="search-bar">
     <input type="text" name="q" value="{{ query }}" placeholder="Search by address…">
+    {% if is_iran == "true" %}
+      <input type="hidden" name="is_iran" value="true">
+      <a class="btn btn-sm" href="?q={{ query }}">Show all</a>
+    {% else %}
+      <a class="btn btn-sm" href="?q={{ query }}&is_iran=true">Iranian only</a>
+    {% endif %}
     <button type="submit" class="btn btn-sm">Search</button>
   </form>
 
@@ -30,9 +36,7 @@
           <tr>
             <td class="mono">{{ ip.address }}</td>
             <td>IPv{{ ip.version }}</td>
-            <td>
-              {% if ip.is_iran %}<span class="badge red">IR</span>{% else %}—{% endif %}
-            </td>
+            {% include "ips/partials/iran_status.html" %}
             <td>{{ ip.country_code|default:"—" }}</td>
             <td>{{ ip.asn|default:"—" }}</td>
             {% include "ips/partials/whois_status.html" %}
@@ -45,11 +49,11 @@
 
     <div class="pagination">
       {% if page_obj.has_previous %}
-        <a class="btn btn-sm" href="?q={{ query }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+        <a class="btn btn-sm" href="?q={{ query }}&is_iran={{ is_iran }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
       {% endif %}
       <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
       {% if page_obj.has_next %}
-        <a class="btn btn-sm" href="?q={{ query }}&page={{ page_obj.next_page_number }}">Next ›</a>
+        <a class="btn btn-sm" href="?q={{ query }}&is_iran={{ is_iran }}&page={{ page_obj.next_page_number }}">Next ›</a>
       {% endif %}
     </div>
   {% else %}

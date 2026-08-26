@@ -1,9 +1,9 @@
 """Celery IP queue (spec sections 13-14, 36).
 
 process_new_ip is the single entry point for new-IP intelligence
-enrichment. It now dispatches apps.whois's WHOIS lookup (Phase 5); Iran
-CIDR matching (Phase 6) and GeoIP enrichment (Phase 8) are the remaining
-TODOs here.
+enrichment. It dispatches apps.whois's WHOIS lookup (Phase 5) and
+apps.iran's CIDR classification (Phase 6); GeoIP enrichment (Phase 8) is
+the remaining TODO here.
 """
 from __future__ import annotations
 
@@ -35,7 +35,10 @@ def process_new_ip(ip_id: int) -> None:
                 from apps.whois.tasks import perform_whois_lookup
 
                 perform_whois_lookup.delay(ip.id)
-            # TODO(Phase 6): dispatch Iran CIDR matching.
+
+            from apps.iran.tasks import classify_ip
+
+            classify_ip.delay(ip.id)
             # TODO(Phase 8): dispatch GeoIP enrichment.
     except LockHeldError:
         logger.info("process_new_ip: %s already being processed, skipping", ip.address)
