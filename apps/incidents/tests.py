@@ -116,3 +116,42 @@ class TimelineViewTests(IncidentsViewTestsBase):
         self.assertEqual(response.context["page_obj"].paginator.count, 4)
         response = self.client.get(reverse("incidents:timeline"), {"host": "nope.example.com"})
         self.assertEqual(response.context["page_obj"].paginator.count, 0)
+
+
+class PurgeOldRequestEventsTaskTests(TestCase):
+    def test_deletes_only_events_older_than_retention(self):
+        from datetime import timedelta
+
+        from .tasks import purge_old_request_events
+
+        server = _make_server("edge-1")
+        log_source = LogSource.objects.create(
+            server=server, name="access.log", path="/var/log/nginx/access.log"
+        )
+        now = timezone.now()
+        ip = IPAddress.objects.create(address="1.1.1.1", version=4, first_seen_at=now, last_seen_at=now)
+        old_event = RequestEvent.objects.create(
+            server=server,
+            log_source=log_source,
+            ip=ip,
+            timestamp=now - timedelta(days=400),
+            status=503,
+            bytes=1,
+            raw_line="raw",
+        )
+        recent_event = RequestEvent.objects.create(
+            server=server,
+            log_source=log_source,
+            ip=ip,
+            timestamp=now - timedelta(days=1),
+            status=503,
+            bytes=1,
+            raw_line="raw",
+        )
+
+        count = purge_old_request_events()
+
+        self.assertEqual(count, 1)
+        remaining = set(RequestEvent.objects.values_list("id", flat=True))
+        self.assertEqual(remaining, {recent_event.id})
+        self.assertNotIn(old_event.id, remaining)

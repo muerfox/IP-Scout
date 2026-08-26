@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Workers — IP Scout{% endblock %}
+{% block topbar_title %}Workers{% endblock %}
+
+{% block content %}
+  <h1>Workers <span class="subtitle">queued is live (Redis); running/failed/completed track the last 24h</span></h1>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Queue</th>
+        <th>Queued</th>
+        <th>Running</th>
+        <th>Failed (24h)</th>
+        <th>Completed (24h)</th>
+        <th>Last execution</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for status in statuses %}
+        <tr>
+          <td>{{ status.label }} <span class="mono" style="color:var(--text-faint);">({{ status.queue_name }})</span></td>
+          <td class="num">
+            {% if status.queued is None %}
+              <span class="badge red" title="{{ status.redis_error }}">unreachable</span>
+            {% else %}
+              {{ status.queued }}
+            {% endif %}
+          </td>
+          <td class="num">{{ status.running }}</td>
+          <td class="num">{% if status.failed_recent %}<span style="color:var(--red);">{{ status.failed_recent }}</span>{% else %}0{% endif %}</td>
+          <td class="num">{{ status.completed_recent }}</td>
+          <td>{{ status.last_execution|default:"never" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="panel-note">
+    "Queued" reads the Redis list length for each queue directly - always
+    live, no worker needs to be running to see it. "Running" /
+    "Failed" / "Completed" come from <code>django-celery-results</code>
+    (<code>CELERY_TASK_TRACK_STARTED=True</code>), so they're accurate
+    even between polls - not a snapshot of workers that happen to be up
+    right now.
+  </div>
+{% endblock %}

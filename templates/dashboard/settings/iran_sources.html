@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Iran CIDR Source Settings — IP Scout{% endblock %}
+{% block topbar_title %}Settings — Iran CIDR Sources{% endblock %}
+
+{% block content %}
+  <h1>Iran CIDR Sources</h1>
+  <div class="panel-note">Configured via environment variables - see <code>.env.example</code>. This page is read-only.</div>
+
+  <div class="kv-grid" style="margin-top:16px;">
+    <div><div class="kv-label">Source (IRAN_CIDR_SOURCE)</div><div class="kv-value">{{ iran_cidr_source }}</div></div>
+    <div><div class="kv-label">Total IR CIDRs</div><div class="kv-value">{{ total_cidrs }}</div></div>
+    <div><div class="kv-label">Enabled IR CIDRs</div><div class="kv-value">{{ enabled_cidrs }}</div></div>
+  </div>
+
+  <div class="form-actions">
+    <a class="btn" href="{% url 'iran:cidrs' %}">Manage CIDRs</a>
+  </div>
+
+  {% if iran_cidr_source == "static" %}
+    <div class="panel-note">
+      The "static" provider treats <code>CountryNetwork</code> rows
+      themselves as the source of truth - no external feed is fetched.
+      Monthly validation (1st of each month) re-verifies them against
+      themselves. Add real, trusted CIDR data via
+      <a href="{% url 'iran:cidrs' %}">Iran → CIDRs</a>.
+    </div>
+  {% endif %}
+{% endblock %}

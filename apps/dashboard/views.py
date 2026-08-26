@@ -7,6 +7,8 @@ from apps.ips.services import IPIntelligenceService
 from apps.logs.models import LogSource
 from apps.servers.models import Server
 
+from .workers import WorkerMonitoringService
+
 
 @login_required
 def index(request):
@@ -29,3 +31,8 @@ def world_map(request):
     """Static shell - all data is fetched client-side from /api/v1/map/
     (spec sections 28-29)."""
     return render(request, "dashboard/map.html")
+
+
+@login_required
+def workers(request):
+    return render(request, "dashboard/workers.html", {"statuses": WorkerMonitoringService.build_statuses()})

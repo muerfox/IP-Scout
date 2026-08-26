@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log — IP Scout{% endblock %}
+{% block topbar_title %}Audit Log{% endblock %}
+
+{% block content %}
+  <h1>Audit Log <span class="subtitle">{{ page_obj.paginator.count }} total</span></h1>
+
+  <form method="get" class="search-bar" style="max-width:none;">
+    <input type="text" name="action" value="{{ action }}" placeholder="Filter by action…">
+    <select name="result">
+      <option value="" {% if not result %}selected{% endif %}>Any result</option>
+      <option value="success" {% if result == "success" %}selected{% endif %}>Success</option>
+      <option value="failure" {% if result == "failure" %}selected{% endif %}>Failure</option>
+    </select>
+    <button type="submit" class="btn btn-sm">Filter</button>
+  </form>
+
+  {% if page_obj.object_list %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>User</th>
+          <th>Action</th>
+          <th>Object</th>
+          <th>Result</th>
+          <th>IP address</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in page_obj.object_list %}
+          <tr>
+            <td>{{ entry.created_at }}</td>
+            <td>{{ entry.user|default:"system" }}</td>
+            <td class="mono">{{ entry.action }}</td>
+            <td>{{ entry.object_type }} {{ entry.object_repr }}</td>
+            <td>{% if entry.result == "success" %}<span class="status-dot ok"></span>{% else %}<span class="status-dot error"></span>{% endif %}{{ entry.result }}</td>
+            <td class="mono">{{ entry.ip_address|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?action={{ action }}&result={{ result }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?action={{ action }}&result={{ result }}&page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">No audit log entries yet.</div>
+  {% endif %}
+{% endblock %}

@@ -53,12 +53,17 @@ NAV_TREE: list[NavItem | NavSection] = [
         NavItem("Exports", "iran:export"),
     ]),
     NavItem("World Map", "dashboard:map"),
-    NavItem("Workers"),
+    NavItem("Workers", "dashboard:workers"),
     NavSection("Settings", [
-        NavItem("WHOIS"),
-        NavItem("Retention"),
-        NavItem("GeoIP"),
-        NavItem("Iran CIDR Sources"),
-        NavItem("Users"),
+        NavItem("WHOIS", "dashboard:settings-whois"),
+        NavItem("Retention", "dashboard:settings-retention"),
+        NavItem("GeoIP", "dashboard:settings-geoip"),
+        NavItem("Iran CIDR Sources", "dashboard:settings-iran-sources"),
+        NavItem("Users", "dashboard:settings-users"),
+        # Not one of spec section 61's literal five Settings items - added
+        # because AuditLogEntry has existed since Phase 1 with no in-app
+        # surface at all (only /admin), and "audit log surfacing" is
+        # explicitly named in the Phase 9 roadmap description.
+        NavItem("Audit Log", "users:audit-log"),
     ]),
 ]

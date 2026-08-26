@@ -52,3 +52,33 @@ class AuditLogTests(TestCase):
         entry = record_audit_log("server.added", user=self.user, ip_address="1.2.3.4")
         self.assertEqual(entry.user_id, self.user.id)
         self.assertEqual(entry.ip_address, "1.2.3.4")
+
+
+class AuditLogViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("users:audit-log"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_lists_entries(self):
+        record_audit_log("server.added", user=self.user)
+        response = self.client.get(reverse("users:audit-log"))
+        self.assertContains(response, "server.added")
+
+    def test_filters_by_action(self):
+        record_audit_log("server.added", user=self.user)
+        record_audit_log("ip.whois_forced", user=self.user)
+        response = self.client.get(reverse("users:audit-log"), {"action": "whois"})
+        self.assertContains(response, "ip.whois_forced")
+        self.assertNotContains(response, "server.added")
+
+    def test_filters_by_result(self):
+        record_audit_log("server.added", user=self.user, result=AuditLogEntry.Result.FAILURE)
+        record_audit_log("ip.whois_forced", user=self.user, result=AuditLogEntry.Result.SUCCESS)
+        response = self.client.get(reverse("users:audit-log"), {"result": "failure"})
+        self.assertContains(response, "server.added")
+        self.assertNotContains(response, "ip.whois_forced")

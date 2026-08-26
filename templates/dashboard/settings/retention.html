@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Retention Settings — IP Scout{% endblock %}
+{% block topbar_title %}Settings — Retention{% endblock %}
+
+{% block content %}
+  <div class="detail-header">
+    <h1>Retention</h1>
+    <form method="post" action="{% url 'dashboard:settings-retention-purge' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger" onclick="return confirm('Run the retention purge now?');">Run Purge Now</button>
+    </form>
+  </div>
+  <div class="panel-note">
+    Configured via environment variables - see <code>.env.example</code>.
+    Enforced automatically every day at 02:00 UTC
+    (<code>apps.ips.tasks.purge_old_data</code>, editable at
+    <a href="/admin/django_celery_beat/periodictask/">/admin/django_celery_beat/periodictask/</a>).
+  </div>
+
+  <div class="kv-grid" style="margin-top:16px;">
+    <div><div class="kv-label">Request events (RequestEvent)</div><div class="kv-value">{{ request_retention_days }} days <span class="badge green">enforced</span></div></div>
+    <div><div class="kv-label">Raw WHOIS (WhoisRecord)</div><div class="kv-value">{{ whois_retention_days }} days <span class="badge green">enforced</span></div></div>
+    <div><div class="kv-label">Unused IP intelligence (IPAddress)</div><div class="kv-value">{{ ip_retention_days }} days <span class="badge green">enforced</span></div></div>
+    <div><div class="kv-label">Incident history</div><div class="kv-value">{{ incident_retention_days }} days <span class="badge">not yet wired</span></div></div>
+  </div>
+
+  <div class="panel-note">
+    <strong>Incident history</strong> (<code>INCIDENT_RETENTION_DAYS</code>)
+    is configured but not consumed by any purge task - the spec describes
+    it as distinct from raw request events, but no separate "incident"
+    aggregate model has been built (only <code>RequestEvent</code>
+    exists). Marked here rather than silently ignored.
+  </div>
+
+  <div class="panel-note">
+    Iran CIDR history (<code>IPCountryHistory</code>) is kept indefinitely
+    by design and is never purged, regardless of these settings - an
+    IPAddress with any classification history is excluded from IP
+    retention entirely (its FK is <code>CASCADE</code>, so deleting the
+    IP would silently destroy that history).
+  </div>
+{% endblock %}

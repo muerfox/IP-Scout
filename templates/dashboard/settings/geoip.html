@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}GeoIP Settings — IP Scout{% endblock %}
+{% block topbar_title %}Settings — GeoIP{% endblock %}
+
+{% block content %}
+  <h1>GeoIP</h1>
+  <div class="panel-note">Configured via environment variables - see <code>.env.example</code>. This page is read-only.</div>
+
+  <div class="kv-grid" style="margin-top:16px;">
+    <div><div class="kv-label">Provider</div><div class="kv-value">{{ geoip_provider }}</div></div>
+    <div><div class="kv-label">Database path</div><div class="kv-value">{{ geoip_database_path|default:"—" }}</div></div>
+    <div><div class="kv-label">IPs with coordinates</div><div class="kv-value">{{ ips_with_coordinates }}</div></div>
+  </div>
+
+  {% if provider_error %}
+    <div class="panel-note" style="border-color: var(--red); color: var(--red);">{{ provider_error }}</div>
+  {% elif geoip_provider == "null" %}
+    <div class="panel-note">
+      No geolocation dataset is bundled with this project (see the
+      Phase 8 commit message for why). Set <code>GEOIP_PROVIDER=maxmind</code>
+      and <code>GEOIP_DATABASE_PATH</code> to a real
+      <code>GeoLite2-City.mmdb</code> to populate coordinates for the
+      world map.
+    </div>
+  {% endif %}
+{% endblock %}

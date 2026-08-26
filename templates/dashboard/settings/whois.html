@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}WHOIS Settings — IP Scout{% endblock %}
+{% block topbar_title %}Settings — WHOIS{% endblock %}
+
+{% block content %}
+  <h1>WHOIS</h1>
+  <div class="panel-note">Configured via environment variables - see <code>.env.example</code>. This page is read-only.</div>
+
+  <div class="kv-grid" style="margin-top:16px;">
+    <div><div class="kv-label">Binary (configured)</div><div class="kv-value">{{ whois_binary }}</div></div>
+    <div><div class="kv-label">Binary (resolved)</div><div class="kv-value">{{ resolved_binary }} {% if not binary_found %}<span class="badge red">not found</span>{% else %}<span class="badge green">found</span>{% endif %}</div></div>
+    <div><div class="kv-label">Timeout</div><div class="kv-value">{{ whois_timeout }}s</div></div>
+    <div><div class="kv-label">Cache freshness</div><div class="kv-value">{{ whois_cache_days }} days</div></div>
+    <div><div class="kv-label">Queue concurrency</div><div class="kv-value">{{ whois_queue_concurrency }}</div></div>
+    <div><div class="kv-label">IPs pending a check</div><div class="kv-value">{{ whois_pending_count }}</div></div>
+  </div>
+{% endblock %}

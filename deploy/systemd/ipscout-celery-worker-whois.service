@@ -1,0 +1,26 @@
+[Unit]
+Description=IP Scout - Celery worker (whois, concurrency-limited)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=ipscout
+Group=ipscout
+WorkingDirectory=/opt/ipscout
+EnvironmentFile=/opt/ipscout/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+# --concurrency below should match WHOIS_QUEUE_CONCURRENCY in .env - edit
+# both together if you change it (systemd ExecStart doesn't reliably
+# expand env vars the same way a shell does, so this is hardcoded rather
+# than interpolated).
+ExecStart=/opt/ipscout/.venv/bin/celery -A config worker \
+    -Q whois \
+    --concurrency=4 \
+    --hostname=whois@%%h \
+    -l info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

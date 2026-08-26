@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "drf_spectacular",
     "django_celery_beat",
+    "django_celery_results",
     # IP Scout apps
     "apps.users",
     "apps.dashboard",
@@ -174,7 +175,12 @@ CACHES = {
 # ---------------------------------------------------------------------------
 
 CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
+# django-db (via django_celery_results), not Redis: worker monitoring
+# (spec section 34) needs queryable history - status/worker/timestamps
+# per task - which a Redis result backend doesn't retain once read.
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_RESULT_EXTENDED = True
+CELERY_TASK_TRACK_STARTED = True
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"

@@ -135,6 +135,22 @@ def _parse_asn(origin: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+@shared_task(queue="maintenance")
+def purge_old_whois_records() -> int:
+    """Retention/purge (spec section 38). Only the historical raw-response
+    rows are deleted - an IP's *current* whois_status/whois_checked_at
+    live on IPAddress itself, so this never loses "active" information."""
+    cutoff = timezone.now() - timedelta(days=settings.WHOIS_RETENTION_DAYS)
+    queryset = WhoisRecord.objects.filter(queried_at__lt=cutoff)
+    count = queryset.count()
+    if count:
+        queryset.delete()
+    logger.info(
+        "purge_old_whois_records: deleted %d record(s) older than %d days", count, settings.WHOIS_RETENTION_DAYS
+    )
+    return count
+
+
 def _inetnum_to_cidr(inetnum: str) -> str | None:
     """Best-effort: exact CIDR notation is used as-is; a "start - end"
     range (common in RIPE/APNIC output) is summarized to its first CIDR

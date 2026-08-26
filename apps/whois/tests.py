@@ -214,3 +214,24 @@ class ForceWhoisViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "whois-cell")
+
+
+class PurgeOldWhoisRecordsTaskTests(TestCase):
+    def test_deletes_only_records_older_than_retention(self):
+        from .tasks import purge_old_whois_records
+
+        now = timezone.now()
+        ip = IPAddress.objects.create(address="1.1.1.1", version=4, first_seen_at=now, last_seen_at=now)
+        old_record = WhoisRecord.objects.create(
+            ip=ip, queried_at=now - timedelta(days=200), raw_response="old", parsed_data={}
+        )
+        recent_record = WhoisRecord.objects.create(
+            ip=ip, queried_at=now - timedelta(days=1), raw_response="recent", parsed_data={}
+        )
+
+        count = purge_old_whois_records()
+
+        self.assertEqual(count, 1)
+        remaining = set(WhoisRecord.objects.values_list("id", flat=True))
+        self.assertEqual(remaining, {recent_record.id})
+        self.assertNotIn(old_record.id, remaining)

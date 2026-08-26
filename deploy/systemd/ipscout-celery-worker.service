@@ -1,0 +1,26 @@
+[Unit]
+Description=IP Scout - Celery worker (logs, ips, iran, maintenance)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=ipscout
+Group=ipscout
+WorkingDirectory=/opt/ipscout
+EnvironmentFile=/opt/ipscout/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+# WHOIS runs in its own dedicated worker (ipscout-celery-worker-whois.service)
+# so its concurrency can be capped independently (spec section 35: "Limit
+# WHOIS concurrency. Do not launch thousands of WHOIS processes
+# simultaneously") without throttling everything else.
+ExecStart=/opt/ipscout/.venv/bin/celery -A config worker \
+    -Q logs,ips,iran,maintenance \
+    --concurrency=8 \
+    --hostname=main@%%h \
+    -l info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+[Unit]
+Description=IP Scout - Celery beat scheduler
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=ipscout
+Group=ipscout
+WorkingDirectory=/opt/ipscout
+EnvironmentFile=/opt/ipscout/.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+# DatabaseScheduler (not the default file-based one) so periodic tasks -
+# log polling, monthly Iran validation, daily retention purge - are
+# editable from /admin/django_celery_beat/periodictask/ without a restart.
+ExecStart=/opt/ipscout/.venv/bin/celery -A config beat \
+    -l info \
+    --scheduler django_celery_beat.schedulers:DatabaseScheduler
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
