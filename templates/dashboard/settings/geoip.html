@@ -17,11 +17,13 @@
     <div class="panel-note" style="border-color: var(--red); color: var(--red);">{{ provider_error }}</div>
   {% elif geoip_provider == "null" %}
     <div class="panel-note">
-      No geolocation dataset is bundled with this project (see the
-      Phase 8 commit message for why). Set <code>GEOIP_PROVIDER=maxmind</code>
-      and <code>GEOIP_DATABASE_PATH</code> to a real
-      <code>GeoLite2-City.mmdb</code> to populate coordinates for the
-      world map.
+      No geolocation dataset is bundled with this project. Set
+      <code>GEOIP_PROVIDER=maxmind</code> and
+      <code>GEOIP_DATABASE_PATH</code> to a real MaxMind-DB-format
+      <code>.mmdb</code> file to populate coordinates for the world map -
+      MaxMind's own GeoLite2-City needs a free account; DB-IP's City
+      Lite (download.db-ip.com/free/, CC BY 4.0, no signup) is in the
+      same format and works unmodified.
     </div>
   {% endif %}
 {% endblock %}

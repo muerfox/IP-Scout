@@ -126,16 +126,36 @@ validation pass touching the other's rows. 11 new tests (offline,
 fixture-based parsing coverage - the live RIPE fetch above was a manual
 verification, not something the test suite depends on network for).
 
+The same pattern applied one more time, to GeoIP: MaxMind's own
+GeoLite2-City needs a licensed account, so `MaxMindGeoIPProvider`
+(unmodified - no new code needed) was verified for real against
+**DB-IP's City Lite database instead** (download.db-ip.com/free/, CC BY
+4.0, no signup) - DB-IP builds it in the same MaxMind DB binary format
+specifically for compatibility with the standard `geoip2` library this
+provider already uses. Downloaded the real ~130MB file and ran a real
+lookup through the unmodified app code
+(`GeoIPService.enrich()` against real Postgres): `2.57.3.1` -> Tehran,
+Iran, `35.7239/51.4329` - correctly persisted onto the IP row. Surfaced
+one now-stale test in the process: `MaxMindGeoIPProviderTests` asserted
+an "import fails, package genuinely isn't installed" path by relying on
+`geoip2` being absent from the sandbox - no longer true once installing
+it to run this verification (and never true in a real deployment,
+since `requirements/base.txt` already declares it). Fixed with
+`patch.dict(sys.modules, {"geoip2.database": None})` so the test forces
+the failure deterministically instead of depending on ambient
+environment state - same category of fix as the Redis-unreachable test
+two commits back.
+
 Nothing in the UI or API returns fabricated data — every nav entry now
 has a real page behind it, and no result is invented when a source
-(GeoIP, WHOIS, Iran CIDR) has nothing to say. **No geolocation dataset
-ships with this project** - MaxMind's GeoLite2 requires a licensed
-account and can't be substituted with guessed-at data.
-`GEOIP_PROVIDER` defaults to `null`; a deployment that adds a real
-`GeoLite2-City.mmdb` and points `GEOIP_DATABASE_PATH` at it gets real
-geolocation with no code changes (see Settings → GeoIP). Iran CIDR
-data ships empty by default for the reason above, not a data-access
-one - see Settings → Iran CIDR Sources for current status.
+(GeoIP, WHOIS, Iran CIDR) has nothing to say. `GEOIP_PROVIDER` defaults
+to `null` and `IRAN_CIDR_SOURCE` defaults to `static` (both start
+empty) - not because real data is unreachable (both now have a
+verified-working real source, see above and Settings → GeoIP / Iran
+CIDR Sources), but because embedding a large, independently-updated
+external dataset - or pointing a scheduled task at an external network
+dependency - by default is a deployment's decision, not something to
+default silently.
 
 Phase 10, concretely:
 

@@ -2,15 +2,21 @@
 support an external GeoIP provider later. Design the geo application so
 the provider can be replaced.").
 
-No geolocation dataset ships with this project. This sandbox has no
-network access and no way to obtain or verify a real IP-to-location
-database, and fabricating coordinates would be exactly the kind of fake
-data the project rules warn against (same reasoning as apps.iran's
-provider - see its module docstring). The default "null" provider
-honestly returns nothing; MaxMindGeoIPProvider is real, correct code
-against the standard `geoip2` library for a deployment that adds its own
-GeoLite2-City.mmdb (free with a MaxMind account) and points
-GEOIP_DATABASE_PATH at it.
+No geolocation dataset ships with this project's code or migrations -
+the default "null" provider honestly returns nothing, and an operator
+must deliberately point GEOIP_DATABASE_PATH at a real database. That's
+not fabricated-data risk (same reasoning as apps.iran's provider - see
+its module docstring) nor a network-access limitation: MaxMindGeoIPProvider
+reads any file in the standard MaxMind DB binary format via the `geoip2`
+library, and while MaxMind's own GeoLite2-City requires a free account,
+DB-IP's "City Lite" database (download.db-ip.com/free/, CC BY 4.0, no
+signup) is built in that exact same format and works against this class
+completely unmodified - verified with a real download and a real lookup
+(2.57.3.1 -> Tehran, Iran, 35.7239/51.4329) as part of this project's
+end-to-end verification. Not bundled here for the same reason
+apps.iran's ripencc provider isn't the default IRAN_CIDR_SOURCE: a
+~130MB file with its own update cadence is a deployment's decision, not
+something to fetch or embed automatically.
 """
 from __future__ import annotations
 
@@ -44,7 +50,10 @@ class NullGeoIPProvider(GeoIPProvider):
 
 
 class MaxMindGeoIPProvider(GeoIPProvider):
-    """Reads a local MaxMind GeoLite2-City (or GeoIP2-City) .mmdb file.
+    """Reads a local .mmdb file in the standard MaxMind DB binary format:
+    MaxMind's own GeoLite2-City/GeoIP2-City (account required), or
+    DB-IP's City Lite (download.db-ip.com/free/, CC BY 4.0, no account -
+    verified compatible, see this module's docstring).
 
     `geoip2` is only imported here, not at module level, so a deployment
     that never configures this provider doesn't need the package

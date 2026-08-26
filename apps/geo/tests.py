@@ -1,3 +1,4 @@
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -45,11 +46,16 @@ class MaxMindGeoIPProviderTests(unittest.TestCase):
             MaxMindGeoIPProvider(database_path="")
 
     def test_lookup_without_geoip2_installed_raises_improperly_configured(self):
-        # geoip2 genuinely isn't installed in this sandbox - this exercises
-        # the real guard, not a simulated one.
+        # Force the provider's `import geoip2.database` to fail regardless
+        # of whether the package is actually installed in this environment
+        # (requirements/base.txt declares it, so a real deployment - and
+        # now this sandbox too - normally has it) - a real absent-package
+        # guard, exercised deterministically rather than by relying on
+        # ambient environment state.
         provider = MaxMindGeoIPProvider(database_path="/tmp/does-not-matter.mmdb")
-        with self.assertRaises(ImproperlyConfigured):
-            provider.lookup("1.2.3.4")
+        with patch.dict(sys.modules, {"geoip2.database": None}):
+            with self.assertRaises(ImproperlyConfigured):
+                provider.lookup("1.2.3.4")
 
 
 class GeoIPServiceTests(TestCase):
