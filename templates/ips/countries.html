@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Countries — IP Scout{% endblock %}
+{% block topbar_title %}Countries{% endblock %}
+
+{% block content %}
+  <h1>Countries <span class="subtitle">GeoIP breakdown across all known IPs</span></h1>
+
+  {% if countries %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Country</th>
+          <th>Code</th>
+          <th class="num">IPs</th>
+          <th class="num">Iranian</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in countries %}
+          <tr>
+            <td>{{ row.country_name|default:"—" }}</td>
+            <td class="mono">{{ row.country_code }}</td>
+            <td class="num"><a href="{% url 'ips:list' %}?q={{ row.country_code }}">{{ row.total }}</a></td>
+            <td class="num">{{ row.iran_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      No country data yet — GeoIP enrichment hasn't resolved any IPs. See Settings → GeoIP.
+    </div>
+  {% endif %}
+{% endblock %}

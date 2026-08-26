@@ -33,13 +33,13 @@ NAV_TREE: list[NavItem | NavSection] = [
     ]),
     NavSection("Logs", [
         NavItem("Log Sources", "logs:list"),
-        NavItem("Readers"),
+        NavItem("Readers", "logs:readers"),
     ]),
     NavSection("IP Intelligence", [
         NavItem("IP Addresses", "ips:list"),
-        NavItem("Countries"),
-        NavItem("ASNs"),
-        NavItem("WHOIS"),
+        NavItem("Countries", "ips:countries"),
+        NavItem("ASNs", "ips:asns"),
+        NavItem("WHOIS", "whois:list"),
     ]),
     NavSection("503 Intelligence", [
         NavItem("Overview", "incidents:overview"),

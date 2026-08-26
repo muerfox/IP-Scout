@@ -72,6 +72,31 @@ class LogSourceViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Monitoring")
 
+    def test_readers_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("logs:readers"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_readers_shows_incremental_state(self):
+        self.log_source.inode = 12345
+        self.log_source.byte_offset = 9876
+        self.log_source.save()
+        response = self.client.get(reverse("logs:readers"))
+        self.assertContains(response, "12345")
+        self.assertContains(response, "9876")
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_poll_now_queues_task_and_redirects(self, mock_delay):
+        response = self.client.post(reverse("logs:poll-now", args=[self.log_source.pk]))
+        mock_delay.assert_called_once_with(self.log_source.id)
+        self.assertRedirects(response, reverse("logs:readers"))
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_poll_now_requires_post(self, mock_delay):
+        response = self.client.get(reverse("logs:poll-now", args=[self.log_source.pk]))
+        self.assertEqual(response.status_code, 405)
+        mock_delay.assert_not_called()
+
 
 class DiscoverServerLogsTaskTests(TestCase):
     def setUp(self):

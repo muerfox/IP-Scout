@@ -1,3 +1,4 @@
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
@@ -14,6 +15,29 @@ def log_source_list(request):
         LogSource.objects.select_related("server").annotate(event_count=Count("request_events")).all()
     )
     return render(request, "logs/list.html", {"log_sources": log_sources})
+
+
+@login_required
+def reader_list(request):
+    """Reader diagnostics (nav: Logs -> Readers): the raw incremental-read
+    state (inode/byte_offset/last_error) "Log Sources" summarizes into a
+    status dot, plus a manual poll trigger - previously the only way to
+    run a reader was to wait for Celery Beat's schedule."""
+    log_sources = LogSource.objects.select_related("server").all()
+    return render(request, "logs/readers.html", {"log_sources": log_sources})
+
+
+@login_required
+@require_POST
+def log_source_poll_now(request, pk):
+    log_source = get_object_or_404(LogSource, pk=pk)
+
+    from .tasks import poll_log_source
+
+    poll_log_source.delay(log_source.id)
+    record_audit_log("logsource.poll_forced", obj=log_source)
+    messages.info(request, f"Poll queued for {log_source.path}.")
+    return redirect("logs:readers")
 
 
 @login_required

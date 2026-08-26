@@ -55,6 +55,33 @@ were found and fixed:
   `override_settings` instead, so the test is deterministic regardless
   of what's actually running.
 
+With real infrastructure available, the four remaining disabled nav
+placeholders (Logs → Readers, IP Intelligence → Countries/ASNs/WHOIS)
+were closed out too - the last gaps between the nav tree and actual
+pages:
+
+- **Countries** / **ASNs** (`apps/ips`): directory pages grouping all
+  known IPs by GeoIP country / WHOIS ASN, each row linking into the
+  existing filtered IP list (`?q=<code>` / `?asn=<n>`, both already
+  supported by `ip_list`). Deliberately not scoped to a time window -
+  see `DashboardAnalyticsService` for the period-scoped, 503-incident
+  country chart this doesn't duplicate. ASNs group by `asn` alone
+  (`Max("organization")` for display), not `(asn, organization)`,
+  since the same ASN's organization string can vary slightly across
+  individual WHOIS responses.
+- **Readers** (`apps/logs`): the raw incremental-read state
+  (inode/byte_offset/last_error) "Log Sources" only ever summarized
+  into a status dot, plus a "Poll now" button - previously the only
+  way to trigger a reader was to wait for Celery Beat's schedule.
+- **WHOIS** (`apps/whois`, previously had no `views.py`/`urls.py` at
+  all): a browsable, filter-by-IP archive of every `WhoisRecord`, and
+  a detail page finally showing a lookup's actual raw response and
+  parsed fields - nowhere in the UI displayed `raw_response` before
+  this, even on the IP detail page's "Recent WHOIS Lookups" table.
+
+13 new tests; 305/305 passing against the same real Postgres/Redis,
+plus a live `runserver` check that all four new pages return 200.
+
 Nothing in the UI or API returns fabricated data — unbuilt nav entries
 are disabled rather than linking to pages that don't exist. **No
 geolocation dataset or Iran CIDR data ships with this project** - this
@@ -118,7 +145,7 @@ apps/
   servers/         Server model, SSHService (test/discover/poll_log), CRUD views
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
   ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip + purge tasks, IP list + detail
-  whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup, purge task
+  whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup, purge task, browsable list/detail views
   geo/             GeoIPProvider (null/maxmind), GeoIPService, enrich_ip
   incidents/       RequestEvent, 503 Overview/IPs/Timeline views, purge task    (rollups: still open)
   iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation, export

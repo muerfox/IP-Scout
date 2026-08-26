@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}WHOIS {{ record.ip.address }} — IP Scout{% endblock %}
+{% block topbar_title %}WHOIS lookup{% endblock %}
+
+{% block content %}
+  <div class="detail-header">
+    <h1><a href="{% url 'ips:detail' record.ip_id %}">{{ record.ip.address }}</a></h1>
+  </div>
+  <div class="detail-meta">
+    queried {{ record.queried_at }} · server {{ record.whois_server|default:"—" }} · hash
+    <span class="mono">{{ record.response_hash|default:"—" }}</span>
+  </div>
+
+  {% if record.parsed_data %}
+    <div class="section-title">Parsed fields</div>
+    <div class="kv-grid">
+      {% for key, value in record.parsed_data.items %}
+        <div>
+          <div class="kv-label">{{ key }}</div>
+          <div class="kv-value">{{ value }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="section-title">Raw response</div>
+  <div class="card">
+    <pre class="mono" style="white-space: pre-wrap; word-break: break-word; margin: 0;">{{ record.raw_response }}</pre>
+  </div>
+{% endblock %}

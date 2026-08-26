@@ -235,3 +235,57 @@ class PurgeOldWhoisRecordsTaskTests(TestCase):
         remaining = set(WhoisRecord.objects.values_list("id", flat=True))
         self.assertEqual(remaining, {recent_record.id})
         self.assertNotIn(old_record.id, remaining)
+
+
+class WhoisListViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        now = timezone.now()
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=now, last_seen_at=now)
+        self.other_ip = IPAddress.objects.create(
+            address="9.9.9.9", version=4, first_seen_at=now, last_seen_at=now
+        )
+        self.record = WhoisRecord.objects.create(
+            ip=self.ip, queried_at=now, whois_server="whois.example", raw_response="raw text", parsed_data={}
+        )
+        WhoisRecord.objects.create(ip=self.other_ip, queried_at=now, raw_response="other", parsed_data={})
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("whois:list"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_lists_all_records(self):
+        response = self.client.get(reverse("whois:list"))
+        self.assertEqual(response.context["page_obj"].paginator.count, 2)
+
+    def test_filters_by_ip(self):
+        response = self.client.get(reverse("whois:list"), {"ip": "5.1.1.1"})
+        results = list(response.context["page_obj"].object_list)
+        self.assertEqual(results, [self.record])
+
+
+class WhoisDetailViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        now = timezone.now()
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=now, last_seen_at=now)
+        self.record = WhoisRecord.objects.create(
+            ip=self.ip,
+            queried_at=now,
+            whois_server="whois.example",
+            raw_response="inetnum: 5.1.1.0 - 5.1.1.255",
+            parsed_data={"country": "IR"},
+        )
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("whois:detail", args=[self.record.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_shows_raw_response_and_parsed_data(self):
+        response = self.client.get(reverse("whois:detail", args=[self.record.pk]))
+        self.assertContains(response, "inetnum: 5.1.1.0 - 5.1.1.255")
+        self.assertContains(response, "IR")

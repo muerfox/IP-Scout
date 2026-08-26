@@ -93,6 +93,45 @@ def ip_detail(request, pk):
 
 
 @login_required
+def country_list(request):
+    """Country directory (nav: IP Intelligence -> Countries): every
+    GeoIP-resolved country across all known IPs, not scoped to a time
+    window - see DashboardAnalyticsService.build() for the 503-incident,
+    period-scoped country breakdown this deliberately doesn't duplicate."""
+    countries = (
+        IPAddress.objects.exclude(country_code="")
+        .values("country_code", "country_name")
+        .annotate(
+            total=Count("id"),
+            iran_count=Count("id", filter=Q(is_iran=True)),
+        )
+        .order_by("-total")
+    )
+    return render(request, "ips/countries.html", {"countries": countries})
+
+
+@login_required
+def asn_list(request):
+    """ASN directory (nav: IP Intelligence -> ASNs): every WHOIS-resolved
+    ASN across all known IPs, most-seen first. Grouped by asn alone
+    (not asn+organization) since the same ASN's organization string can
+    vary slightly across individual WHOIS responses - Max() picks one
+    deterministically rather than fragmenting one ASN into several rows.
+    """
+    asns = (
+        IPAddress.objects.exclude(asn__isnull=True)
+        .values("asn")
+        .annotate(
+            organization=Max("organization"),
+            total=Count("id"),
+            iran_count=Count("id", filter=Q(is_iran=True)),
+        )
+        .order_by("-total")
+    )
+    return render(request, "ips/asns.html", {"asns": asns})
+
+
+@login_required
 def whois_status_cell(request, pk):
     ip = get_object_or_404(IPAddress, pk=pk)
     return render(request, "ips/partials/whois_status.html", {"ip": ip})
