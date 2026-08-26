@@ -205,7 +205,7 @@ class ForceWhoisViewTests(TestCase):
     def test_enqueues_forced_lookup_and_redirects(self, mock_delay):
         response = self.client.post(reverse("ips:force-whois", args=[self.ip.pk]))
         mock_delay.assert_called_once_with(self.ip.id, force=True)
-        self.assertRedirects(response, reverse("ips:list"))
+        self.assertRedirects(response, reverse("ips:detail", args=[self.ip.pk]))
 
     @patch("apps.whois.tasks.perform_whois_lookup.delay")
     def test_htmx_request_returns_partial(self, mock_delay):

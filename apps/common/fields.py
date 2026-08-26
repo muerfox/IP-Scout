@@ -95,3 +95,24 @@ class ContainsIP(models.Lookup):
         lhs_sql, lhs_params = self.process_lhs(compiler, connection)
         rhs_sql, rhs_params = self.process_rhs(compiler, connection)
         return f"{lhs_sql} >>= {rhs_sql}::inet", lhs_params + rhs_params
+
+
+@models.GenericIPAddressField.register_lookup
+class IsContainedBy(models.Lookup):
+    """`IPAddress.objects.filter(address__is_contained_by="5.1.0.0/22")` -
+    the inverse of ContainsIP: PostgreSQL's `<<=` operator, used by the
+    Iran IP export's CIDR filter (spec section 24). The right-hand side
+    is CIDR notation, which GenericIPAddressField's own get_prep_value
+    would reject (it only accepts bare addresses) - skip it and pass the
+    string straight through; the `::cidr` cast in SQL does the real work.
+    """
+
+    lookup_name = "is_contained_by"
+
+    def get_prep_lookup(self):
+        return str(self.rhs)
+
+    def as_sql(self, compiler, connection):
+        lhs_sql, lhs_params = self.process_lhs(compiler, connection)
+        rhs_sql, rhs_params = self.process_rhs(compiler, connection)
+        return f"{lhs_sql} <<= {rhs_sql}::cidr", lhs_params + rhs_params

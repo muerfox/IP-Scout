@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}503 Overview — IP Scout{% endblock %}
+{% block topbar_title %}503 Intelligence — Overview{% endblock %}
+
+{% block content %}
+  <h1>503 → Iran <span class="subtitle">which Iranian IPs are generating 503s?</span></h1>
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">503 Requests</div><div class="stat-value">{{ total_503 }}</div></div>
+    <div class="stat-card"><div class="stat-label">Unique 503 IPs</div><div class="stat-value">{{ unique_ips }}</div></div>
+    <div class="stat-card"><div class="stat-label">Iranian IPs</div><div class="stat-value">{{ iranian_ips }}</div></div>
+    <div class="stat-card"><div class="stat-label">Iranian IP %</div><div class="stat-value">{{ iranian_pct }}%</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="section-title" style="margin:0;">Top IPs by 503 Count</div>
+    <a class="btn btn-sm" href="{% url 'incidents:ip-table' %}">View full table</a>
+  </div>
+
+  {% if top_ips %}
+    <table class="data-table">
+      <thead>
+        <tr><th>IP</th><th>Iran</th><th>ASN</th><th>Organization</th><th>503 Count</th><th>Last Seen</th></tr>
+      </thead>
+      <tbody>
+        {% for ip in top_ips %}
+          <tr>
+            <td class="mono"><a href="{% url 'ips:detail' ip.pk %}">{{ ip.address }}</a></td>
+            <td>{% if ip.is_iran %}<span class="badge red">IR</span>{% else %}—{% endif %}</td>
+            <td>{{ ip.asn|default:"—" }}</td>
+            <td>{{ ip.organization|default:"—" }}</td>
+            <td class="num">{{ ip.event_count }}</td>
+            <td>{{ ip.last_seen_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No 503 activity recorded yet.</div>
+  {% endif %}
+{% endblock %}

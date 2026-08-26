@@ -1,8 +1,10 @@
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db.models import Count, Max, Min
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from apps.servers.models import Server
 from apps.users.services import record_audit_log
 
 from .models import IPAddress
@@ -27,6 +29,45 @@ def ip_list(request):
 
 
 @login_required
+def ip_detail(request, pk):
+    """Full intelligence page for one IP (spec sections 30-31): every
+    IPAddress field, recent WHOIS/Iran history, and a filterable 503
+    timeline with aggregate stats."""
+    ip = get_object_or_404(IPAddress, pk=pk)
+
+    events = ip.request_events.select_related("server").order_by("-timestamp")
+    selected_server = request.GET.get("server", "")
+    selected_host = request.GET.get("host", "")
+    if selected_server:
+        events = events.filter(server_id=selected_server)
+    if selected_host:
+        events = events.filter(host=selected_host)
+
+    paginator = Paginator(events, 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    stats = ip.request_events.aggregate(count=Count("id"), first=Min("timestamp"), last=Max("timestamp"))
+    servers = Server.objects.filter(request_events__ip=ip).distinct().order_by("name")
+    hosts = list(ip.request_events.exclude(host="").order_by().values_list("host", flat=True).distinct())
+
+    return render(
+        request,
+        "ips/detail.html",
+        {
+            "ip": ip,
+            "page_obj": page_obj,
+            "stats": stats,
+            "servers": servers,
+            "hosts": hosts,
+            "whois_records": ip.whois_records.order_by("-queried_at")[:5],
+            "history": ip.country_history.order_by("-valid_from")[:10],
+            "selected_server": selected_server,
+            "selected_host": selected_host,
+        },
+    )
+
+
+@login_required
 def whois_status_cell(request, pk):
     ip = get_object_or_404(IPAddress, pk=pk)
     return render(request, "ips/partials/whois_status.html", {"ip": ip})
@@ -46,7 +87,7 @@ def force_whois(request, pk):
 
     if request.headers.get("HX-Request"):
         return render(request, "ips/partials/whois_status.html", {"ip": ip})
-    return redirect("ips:list")
+    return redirect("ips:detail", pk=ip.pk)
 
 
 @login_required
@@ -67,4 +108,4 @@ def recalculate_iran(request, pk):
 
     if request.headers.get("HX-Request"):
         return render(request, "ips/partials/iran_status.html", {"ip": ip})
-    return redirect("ips:list")
+    return redirect("ips:detail", pk=ip.pk)

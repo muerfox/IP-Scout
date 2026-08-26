@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}503 Timeline — IP Scout{% endblock %}
+{% block topbar_title %}503 Intelligence — Timeline{% endblock %}
+
+{% block content %}
+  <h1>503 Timeline <span class="subtitle">{{ page_obj.paginator.count }} events</span></h1>
+
+  <form method="get" class="search-bar" style="max-width:none;">
+    <select name="server">
+      <option value="">All servers</option>
+      {% for server in servers %}
+        <option value="{{ server.pk }}" {% if selected_server == server.pk|stringformat:"s" %}selected{% endif %}>{{ server.name }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="host" value="{{ selected_host }}" placeholder="Host…">
+    <button type="submit" class="btn btn-sm">Filter</button>
+  </form>
+
+  {% if page_obj.object_list %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>IP</th>
+          <th>Iran</th>
+          <th>Server</th>
+          <th>Host</th>
+          <th>URI</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in page_obj.object_list %}
+          <tr>
+            <td>{{ event.timestamp }}</td>
+            <td class="mono"><a href="{% url 'ips:detail' event.ip_id %}">{{ event.ip.address }}</a></td>
+            <td>{% if event.ip.is_iran %}<span class="badge red">IR</span>{% else %}—{% endif %}</td>
+            <td><a href="{% url 'servers:detail' event.server_id %}">{{ event.server.name }}</a></td>
+            <td>{{ event.host|default:"—" }}</td>
+            <td class="mono">{{ event.uri|truncatechars:60 }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?server={{ selected_server }}&host={{ selected_host }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?server={{ selected_server }}&host={{ selected_host }}&page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">No 503 activity recorded yet.</div>
+  {% endif %}
+{% endblock %}

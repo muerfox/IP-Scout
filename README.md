@@ -16,13 +16,15 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 6 — Iran CIDR database, matching, history, monthly validation
+## Status: Phase 7 — IP detail page, 503 intelligence, timeline, exports
 
-Phases 1-6 are implemented: foundation; server/SSH management + log
+Phases 1-7 are implemented: foundation; server/SSH management + log
 discovery; the incremental Nginx log reader/parser and 503 `RequestEvent`
 pipeline; the complete `IPAddress` schema + Celery IP queue; real WHOIS
-execution; and now real Iran CIDR matching feeding `IPAddress.is_iran`.
-Geolocation is not implemented yet. See [Roadmap](#roadmap) below.
+execution; real Iran CIDR matching; and now the investigation surfaces
+that tie it all together - an IP detail page, 503-focused dashboards, and
+Iran IP exports. Geolocation and the world map are not implemented yet.
+See [Roadmap](#roadmap) below.
 
 Nothing in the UI or API returns fabricated data — dashboard cards that
 depend on unbuilt apps show "pending", and unbuilt nav entries are
@@ -34,45 +36,37 @@ classifying real IPs as Iranian would be exactly the kind of fake data
 the project rules warn against. `CountryNetwork` starts empty; an
 operator adds real, trusted ranges via **Iran → CIDRs** or `/admin`.
 
-Phase 6, concretely:
+Phase 7, concretely:
 
-- `apps.common.fields.CIDRField` now has a `contains_ip` lookup
-  registered on it: `CountryNetwork.objects.filter(cidr__contains_ip=ip)`
-  compiles to PostgreSQL's native `cidr >>= %s::inet` containment
-  operator (verified against a real query - see the commit) - spec
-  section 21 explicitly forbids a Python `ip.startswith(...)` check, and
-  this doesn't do one.
-- `apps.iran.CountryNetwork` / `IPCountryHistory` — the spec section
-  20/22 schema exactly. `classify()` only opens/closes a history row on
-  an actual transition (became Iranian, stopped being Iranian, or its
-  matched CIDR changed) - "Which Iranian IPs are no longer Iranian?" is
-  a direct query (`valid_until__isnull=False`), not a derived guess.
-- `apps.iran.providers.IranCIDRProvider` — the pluggable source
-  interface spec section 23 asks for, selected via `IRAN_CIDR_SOURCE`
-  (never hard-coded into matching/validation logic). The default
-  `static` provider treats `CountryNetwork` rows themselves as the
-  source of truth (no external fetch); a deployment with a trusted feed
-  implements a provider against it and points the setting there.
-- `IranCIDRService.classify(ip)` — most-specific-prefix match wins,
-  `ip:iran_match_cidr` and `is_iran` persisted, history updated only on
-  change. `IranCIDRValidationService.run()` is the full monthly workflow
-  (fetch → upsert → disable removed entries → re-evaluate every
-  currently-Iranian IP, skipped entirely when nothing actually changed).
-- Celery: `classify_ip` (queue `iran`, `redis_lock("iran:<address>")`)
-  is now dispatched by `process_new_ip` for every new IP - the last
-  Phase 4 TODO is resolved. `run_monthly_iran_validation` is seeded as a
-  django-celery-beat `PeriodicTask` (1st of each month).
-- UI: **Iran → CIDRs** (add/enable/disable), **Iran → Changes** (the
-  history table), **Iran → Iranian IPs** (the IP list filtered
-  `is_iran=true`), and a **Recalculate Iran** button per IP - spec
-  section 45's manual action, audit-logged like Force WHOIS.
+- **IP detail page** (`ips:detail`, spec sections 30-31) - every
+  `IPAddress` field, recent WHOIS lookups, Iran classification history,
+  and a filterable (server/host) paginated 503 timeline with aggregate
+  stats. Force WHOIS / Recalculate Iran now redirect here instead of
+  the list.
+- **503 → Iran** (`incidents:overview`, spec section 25) - the four
+  stat cards (503 Requests, Unique 503 IPs, Iranian IPs, Iranian IP %)
+  plus a top-10 table, with a full sortable/filterable **IPs** table
+  (`incidents:ip-table`) behind "View full table" - IP, Country, ASN,
+  Organization, CIDR, 503 Count, First/Last Seen, WHOIS Last Checked,
+  Iran Status, exactly the section 25 column list. A global
+  chronological **Timeline** (`incidents:timeline`) rounds out the
+  section's three nav entries.
+- **Iran IP export** (`iran:export`, spec section 24) -
+  `apps.common.fields.GenericIPAddressField` gains an `is_contained_by`
+  lookup (PostgreSQL's `<<=` operator, the inverse of Phase 6's
+  `contains_ip`) powering the CIDR filter; `IPExportService` combines it
+  with period/server/503-only/Iran-status filters exactly as spec lists
+  them. A live preview textarea with **Copy**, plus **Download
+  TXT** (one IP per line, verified), **CSV**, and **JSON** - all sharing
+  the same filtered queryset, audit-logged.
 
 Prior phases, briefly: server/SSH management with encrypted credentials
 and Nginx log discovery (Phase 2); an incremental log reader that never
 re-downloads a whole file and a configurable Nginx log parser feeding
 503-only `RequestEvent` rows (Phase 3); the full `IPAddress` schema and
 the Celery IP queue (Phase 4); real WHOIS execution with a 7-day cache
-(Phase 5). See each phase's commit message for the full detail.
+(Phase 5); real Iran CIDR matching, history, and monthly validation
+(Phase 6). See each phase's commit message for the full detail.
 
 ## Project layout
 
@@ -84,11 +78,11 @@ apps/
   dashboard/       nav tree, dashboard views
   servers/         Server model, SSHService (test/discover/poll_log), CRUD views
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
-  ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip queue, IP list
+  ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip queue, IP list + detail
   whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup
   geo/             geolocation abstraction               (Phase 8)
-  incidents/       503 RequestEvent + rollups            (rollups: Phase 8)
-  iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation
+  incidents/       RequestEvent, 503 Overview/IPs/Timeline views      (rollups: Phase 8)
+  iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation, export
   api/             DRF router, JWT auth endpoints
 templates/         base layout + per-app templates
 static/            CSS (NOC black/white/gray theme)
@@ -160,9 +154,9 @@ Built incrementally per the project spec (section 62):
 3. **Incremental Nginx log reader, 503 parser, `RequestEvent`**.
 4. **Full `IPAddress` intelligence fields + Celery IP-intelligence queue + Redis locks**.
 5. **WHOIS service/parser/cache (7-day freshness)**.
-6. **Iran CIDR database, matching, history, monthly validation** (this repo).
-7. IP detail page, 503 intelligence, timeline, exports - Iran IP export filters/downloads specifically land here per spec section 24.
-8. Dashboard charts, world map, filters.
+6. **Iran CIDR database, matching, history, monthly validation**.
+7. **IP detail page, 503 intelligence, timeline, exports** (this repo).
+8. Dashboard charts, world map, filters - GeoIP (`IPAddress.latitude`/`longitude`/`country_*`) is the remaining unpopulated piece of the schema.
 9. Retention/purge, worker monitoring, audit log surfacing, production deployment docs.
 
 ## Production deployment

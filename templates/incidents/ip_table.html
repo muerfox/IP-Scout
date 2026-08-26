@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}503 IPs — IP Scout{% endblock %}
+{% block topbar_title %}503 Intelligence — IPs{% endblock %}
+
+{% block content %}
+  <h1>IPs Generating 503s <span class="subtitle">{{ page_obj.paginator.count }} total</span></h1>
+
+  <form method="get" class="search-bar">
+    {% if is_iran == "true" %}
+      <input type="hidden" name="is_iran" value="true">
+      <a class="btn btn-sm" href="?sort={{ sort }}">Show all</a>
+    {% else %}
+      <a class="btn btn-sm" href="?sort={{ sort }}&is_iran=true">Iranian only</a>
+    {% endif %}
+  </form>
+
+  {% if page_obj.object_list %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><a href="?sort={% if sort == 'address' %}-address{% else %}address{% endif %}&is_iran={{ is_iran }}">IP</a></th>
+          <th>Country</th>
+          <th><a href="?sort={% if sort == 'asn' %}-asn{% else %}asn{% endif %}&is_iran={{ is_iran }}">ASN</a></th>
+          <th>Organization</th>
+          <th>CIDR</th>
+          <th><a href="?sort={% if sort == 'event_count' %}-event_count{% else %}event_count{% endif %}&is_iran={{ is_iran }}">503 Count</a></th>
+          <th><a href="?sort={% if sort == 'first_seen_at' %}-first_seen_at{% else %}first_seen_at{% endif %}&is_iran={{ is_iran }}">First Seen</a></th>
+          <th><a href="?sort={% if sort == 'last_seen_at' %}-last_seen_at{% else %}last_seen_at{% endif %}&is_iran={{ is_iran }}">Last Seen</a></th>
+          <th>WHOIS Checked</th>
+          <th>Iran Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ip in page_obj.object_list %}
+          <tr>
+            <td class="mono"><a href="{% url 'ips:detail' ip.pk %}">{{ ip.address }}</a></td>
+            <td>{{ ip.country_code|default:"—" }}</td>
+            <td>{{ ip.asn|default:"—" }}</td>
+            <td>{{ ip.organization|default:"—" }}</td>
+            <td class="mono">{{ ip.cidr|default:"—" }}</td>
+            <td class="num">{{ ip.event_count }}</td>
+            <td>{{ ip.first_seen_at }}</td>
+            <td>{{ ip.last_seen_at }}</td>
+            <td>{{ ip.whois_checked_at|default:"never" }}</td>
+            <td>{% if ip.is_iran %}<span class="badge red">Iranian</span>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?sort={{ sort }}&is_iran={{ is_iran }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?sort={{ sort }}&is_iran={{ is_iran }}&page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">No 503 activity recorded yet.</div>
+  {% endif %}
+{% endblock %}

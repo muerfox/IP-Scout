@@ -223,7 +223,7 @@ class RecalculateIranViewTests(TestCase):
     def test_enqueues_and_redirects(self, mock_delay):
         response = self.client.post(reverse("ips:recalculate-iran", args=[self.ip.pk]))
         mock_delay.assert_called_once_with(self.ip.id)
-        self.assertRedirects(response, reverse("ips:list"))
+        self.assertRedirects(response, reverse("ips:detail", args=[self.ip.pk]))
 
     @patch("apps.iran.tasks.classify_ip.delay")
     def test_htmx_request_returns_partial(self, mock_delay):
@@ -232,3 +232,63 @@ class RecalculateIranViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "iran-cell")
+
+
+class IpDetailViewTests(TestCase):
+    def setUp(self):
+        from apps.incidents.models import RequestEvent
+        from apps.logs.models import LogSource
+        from apps.servers.models import Server
+
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+        self.server = Server.objects.create(
+            name="edge-1",
+            hostname="edge1.example.com",
+            ssh_username="deploy",
+            ssh_auth_type=Server.AuthType.PASSWORD,
+            ssh_private_key="pw",
+        )
+        self.log_source = LogSource.objects.create(
+            server=self.server, name="access.log", path="/var/log/nginx/access.log"
+        )
+        RequestEvent.objects.create(
+            server=self.server,
+            log_source=self.log_source,
+            ip=self.ip,
+            timestamp=T0,
+            host="example.com",
+            method="GET",
+            uri="/api",
+            status=503,
+            bytes=10,
+            raw_line="raw",
+        )
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:detail", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_shows_address_and_event(self):
+        response = self.client.get(reverse("ips:detail", args=[self.ip.pk]))
+        self.assertContains(response, "5.1.1.1")
+        self.assertContains(response, "/api")
+
+    def test_stats_reflect_event_count(self):
+        response = self.client.get(reverse("ips:detail", args=[self.ip.pk]))
+        self.assertEqual(response.context["stats"]["count"], 1)
+
+    def test_server_filter(self):
+        from apps.servers.models import Server
+
+        other_server = Server.objects.create(
+            name="edge-2",
+            hostname="edge2.example.com",
+            ssh_username="deploy",
+            ssh_auth_type=Server.AuthType.PASSWORD,
+            ssh_private_key="pw",
+        )
+        response = self.client.get(reverse("ips:detail", args=[self.ip.pk]), {"server": other_server.pk})
+        self.assertEqual(len(response.context["page_obj"].object_list), 0)

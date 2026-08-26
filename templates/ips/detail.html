@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}{{ ip.address }} — IP Scout{% endblock %}
+{% block topbar_title %}{{ ip.address }}{% endblock %}
+
+{% block content %}
+  <div class="detail-header">
+    <h1>
+      {{ ip.address }}
+      {% if ip.is_iran %}<span class="badge red">IR</span>{% endif %}
+    </h1>
+    <div class="form-actions" style="margin-top:0;">
+      <form method="post" action="{% url 'ips:force-whois' ip.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn">Force WHOIS</button>
+      </form>
+      <form method="post" action="{% url 'ips:recalculate-iran' ip.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn">Recalculate Iran</button>
+      </form>
+    </div>
+  </div>
+  <div class="detail-meta">IPv{{ ip.version }} · first seen {{ ip.first_seen_at }} · last seen {{ ip.last_seen_at }}</div>
+
+  {% if ip.whois_error %}
+    <div class="panel-note" style="border-color: var(--red); color: var(--red);">WHOIS error: {{ ip.whois_error }}</div>
+  {% endif %}
+
+  <div class="section-title">Intelligence</div>
+  <div class="kv-grid">
+    <div><div class="kv-label">Country (geo)</div><div class="kv-value">{{ ip.country_name|default:"—" }} {{ ip.country_code|default:"" }}</div></div>
+    <div><div class="kv-label">Continent</div><div class="kv-value">{{ ip.continent|default:"—" }}</div></div>
+    <div><div class="kv-label">Latitude / Longitude</div><div class="kv-value">{% if ip.latitude %}{{ ip.latitude }}, {{ ip.longitude }}{% else %}—{% endif %}</div></div>
+    <div><div class="kv-label">ASN</div><div class="kv-value">{{ ip.asn|default:"—" }}</div></div>
+    <div><div class="kv-label">Organization</div><div class="kv-value">{{ ip.organization|default:"—" }}</div></div>
+    <div><div class="kv-label">Network</div><div class="kv-value">{{ ip.network|default:"—" }}</div></div>
+    <div><div class="kv-label">CIDR</div><div class="kv-value">{{ ip.cidr|default:"—" }}</div></div>
+    <div><div class="kv-label">WHOIS country</div><div class="kv-value">{{ ip.whois_country|default:"—" }}</div></div>
+    <div><div class="kv-label">WHOIS status</div><div class="kv-value"><span class="status-dot {% if ip.whois_status == 'ok' %}ok{% elif ip.whois_status == 'error' %}error{% else %}pending{% endif %}"></span>{{ ip.get_whois_status_display }}</div></div>
+    <div><div class="kv-label">WHOIS last checked</div><div class="kv-value">{{ ip.whois_checked_at|default:"never" }}</div></div>
+    <div><div class="kv-label">WHOIS next check</div><div class="kv-value">{{ ip.whois_next_check_at|default:"—" }}</div></div>
+    <div><div class="kv-label">Iran status</div><div class="kv-value">{% if ip.is_iran %}Iranian{% else %}Not Iranian{% endif %}</div></div>
+    <div><div class="kv-label">Matched Iran CIDR</div><div class="kv-value">{{ ip.iran_match_cidr|default:"—" }}</div></div>
+    <div><div class="kv-label">Iran last checked</div><div class="kv-value">{{ ip.iran_checked_at|default:"never" }}</div></div>
+  </div>
+
+  {% if whois_records %}
+    <div class="section-title">Recent WHOIS Lookups</div>
+    <table class="data-table">
+      <thead><tr><th>Queried</th><th>Server</th><th>Hash</th></tr></thead>
+      <tbody>
+        {% for record in whois_records %}
+          <tr><td>{{ record.queried_at }}</td><td>{{ record.whois_server|default:"—" }}</td><td class="mono">{{ record.response_hash|slice:":12" }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if history %}
+    <div class="section-title">Iran Classification History</div>
+    <table class="data-table">
+      <thead><tr><th>Country</th><th>CIDR</th><th>From</th><th>Until</th></tr></thead>
+      <tbody>
+        {% for entry in history %}
+          <tr><td>{{ entry.country_code }}</td><td class="mono">{{ entry.cidr|default:"—" }}</td><td>{{ entry.valid_from }}</td><td>{{ entry.valid_until|default:"ongoing" }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <div class="section-title">503 Timeline</div>
+  <div class="stat-grid" style="margin-top:0;">
+    <div class="stat-card"><div class="stat-label">503 Count</div><div class="stat-value">{{ stats.count }}</div></div>
+    <div class="stat-card"><div class="stat-label">First 503</div><div class="stat-value" style="font-size:14px;">{{ stats.first|default:"—" }}</div></div>
+    <div class="stat-card"><div class="stat-label">Last 503</div><div class="stat-value" style="font-size:14px;">{{ stats.last|default:"—" }}</div></div>
+    <div class="stat-card"><div class="stat-label">Servers</div><div class="stat-value">{{ servers|length }}</div></div>
+  </div>
+
+  <form method="get" class="search-bar" style="max-width:none;">
+    <select name="server">
+      <option value="">All servers</option>
+      {% for server in servers %}
+        <option value="{{ server.pk }}" {% if selected_server == server.pk|stringformat:"s" %}selected{% endif %}>{{ server.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="host">
+      <option value="">All hosts</option>
+      {% for host in hosts %}
+        <option value="{{ host }}" {% if selected_host == host %}selected{% endif %}>{{ host }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm">Filter</button>
+  </form>
+
+  {% if page_obj.object_list %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Server</th>
+          <th>Host</th>
+          <th>Method</th>
+          <th>URI</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in page_obj.object_list %}
+          <tr>
+            <td>{{ event.timestamp }}</td>
+            <td><a href="{% url 'servers:detail' event.server_id %}">{{ event.server.name }}</a></td>
+            <td>{{ event.host|default:"—" }}</td>
+            <td>{{ event.method|default:"—" }}</td>
+            <td class="mono">{{ event.uri|truncatechars:60 }}</td>
+            <td><span class="badge red">{{ event.status }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?server={{ selected_server }}&host={{ selected_host }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?server={{ selected_server }}&host={{ selected_host }}&page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">No 503 activity recorded for this IP yet.</div>
+  {% endif %}
+{% endblock %}
