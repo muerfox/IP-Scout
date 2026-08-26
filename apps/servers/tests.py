@@ -151,6 +151,96 @@ class SSHServiceTests(unittest.TestCase):
             SSHService(server)._connect_kwargs()
 
 
+def _mock_poll_client(stat_output: bytes, exit_status: int, file_content: bytes = b""):
+    """A mocked paramiko.SSHClient for poll_log: `exec_command` answers the
+    fixed `stat -c '%i %s %Y'` call, `open_sftp().open(...)` answers the
+    SFTP range read."""
+    client = MagicMock()
+    client.__enter__.return_value = client
+
+    stdout = MagicMock()
+    stdout.read.return_value = stat_output
+    stdout.channel.recv_exit_status.return_value = exit_status
+    client.exec_command.return_value = (MagicMock(), stdout, MagicMock())
+
+    remote_file = MagicMock()
+    remote_file.__enter__.return_value = remote_file
+    remote_file.__exit__.return_value = False
+    remote_file.read.side_effect = lambda size: file_content[:size]
+
+    sftp = MagicMock()
+    sftp.open.return_value = remote_file
+    client.open_sftp.return_value = sftp
+
+    return client, remote_file, sftp
+
+
+class SSHServicePollLogTests(unittest.TestCase):
+    """poll_log against a mocked paramiko client - no network, no DB."""
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_first_poll_skips_to_end_of_file(self, mock_client_cls):
+        client, remote_file, sftp = _mock_poll_client(b"111 500 1700000000\n", 0)
+        mock_client_cls.return_value = client
+
+        chunk = SSHService(make_server()).poll_log("/var/log/nginx/access.log", None, None)
+
+        self.assertEqual(chunk.inode, 111)
+        self.assertEqual(chunk.size, 500)
+        self.assertEqual(chunk.offset, 500)
+        self.assertEqual(chunk.data, b"")
+        self.assertFalse(chunk.rotated)
+        client.open_sftp.assert_not_called()  # nothing to read on a fresh baseline
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_reads_new_bytes_from_known_offset(self, mock_client_cls):
+        content = b"x" * 100
+        client, remote_file, sftp = _mock_poll_client(b"111 500 1700000000\n", 0, content)
+        mock_client_cls.return_value = client
+
+        chunk = SSHService(make_server()).poll_log("/var/log/nginx/access.log", 111, 400)
+
+        self.assertEqual(chunk.offset, 400)
+        self.assertEqual(chunk.data, content)
+        self.assertFalse(chunk.rotated)
+        remote_file.seek.assert_called_once_with(400)
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_rotation_reads_from_start_of_new_file(self, mock_client_cls):
+        content = b"y" * 50
+        client, remote_file, sftp = _mock_poll_client(b"222 50 1700000000\n", 0, content)
+        mock_client_cls.return_value = client
+
+        chunk = SSHService(make_server()).poll_log("/var/log/nginx/access.log", 111, 999)
+
+        self.assertTrue(chunk.rotated)
+        self.assertEqual(chunk.offset, 0)
+        self.assertEqual(chunk.data, content)
+        remote_file.seek.assert_called_once_with(0)
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_truncated_file_clamps_offset_without_reading(self, mock_client_cls):
+        client, remote_file, sftp = _mock_poll_client(b"111 200 1700000000\n", 0)
+        mock_client_cls.return_value = client
+
+        chunk = SSHService(make_server()).poll_log("/var/log/nginx/access.log", 111, 1000)
+
+        self.assertFalse(chunk.rotated)
+        self.assertEqual(chunk.offset, 200)
+        self.assertEqual(chunk.data, b"")
+        client.open_sftp.assert_not_called()
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_missing_file_returns_none(self, mock_client_cls):
+        client, remote_file, sftp = _mock_poll_client(b"", 1)  # `stat` exits non-zero
+        mock_client_cls.return_value = client
+
+        chunk = SSHService(make_server()).poll_log("/var/log/nginx/gone.log", 111, 0)
+
+        self.assertIsNone(chunk)
+        client.open_sftp.assert_not_called()
+
+
 class ServerFormTests(TestCase):
     def test_new_server_requires_credential(self):
         form = ServerForm(

@@ -1,7 +1,8 @@
-"""SSH connectivity/discovery for monitored servers (spec sections 7, 43).
+"""SSH connectivity/discovery/reading for monitored servers (spec sections
+7, 9, 43).
 
 Every method is one explicit, backend-constructed operation
-(test_connection / discover_logs / stat_log) - there is no "run arbitrary
+(test_connection / discover_logs / poll_log) - there is no "run arbitrary
 command" entry point, and no argument here is ever interpolated from
 untrusted input (log paths come from discovery itself or from the
 Server.log_search_paths admin-only field).
@@ -43,6 +44,18 @@ class DiscoveredLogFile:
     path: str
     size: int
     mtime: int
+
+
+@dataclass
+class LogChunk:
+    """Result of one incremental poll (spec section 9)."""
+
+    inode: int
+    size: int
+    mtime: int
+    offset: int  # byte offset `data` starts at
+    data: bytes  # newly read bytes, b"" if nothing new
+    rotated: bool  # True if the file's inode changed since the last known one
 
 
 class SSHService:
@@ -94,18 +107,46 @@ class SSHService:
                 sftp.close()
         return discovered
 
-    def stat_log(self, path: str) -> DiscoveredLogFile | None:
-        """Stat one known file. Used by Phase 3's incremental reader to
-        detect rotation (inode/size changes)."""
+    def poll_log(self, path: str, known_inode: int | None, known_offset: int | None) -> LogChunk | None:
+        """One incremental read cycle: stat the file (for its inode - the
+        SFTP protocol doesn't expose inode numbers, so this part uses a
+        fixed `stat` command instead), detect rotation, and read any new
+        bytes via an SFTP range read (not a full download). All within a
+        single SSH connection.
+
+        `known_inode=None` means this file has never been polled before;
+        rather than backfilling potentially huge historical content, the
+        first poll establishes a baseline at the current end of file and
+        starts tailing from there (spec sections 9 and 47).
+
+        Returns None if the file doesn't exist (e.g. not created yet, or
+        removed).
+        """
         with self._client() as client:
-            sftp = client.open_sftp()
-            try:
-                attr = sftp.stat(path)
-            except FileNotFoundError:
+            stat_output = self._exec_with_status(client, ["stat", "-c", "%i %s %Y", path])
+            if stat_output is None:
                 return None
-            finally:
-                sftp.close()
-        return DiscoveredLogFile(path=path, size=attr.st_size or 0, mtime=attr.st_mtime or 0)
+            inode_str, size_str, mtime_str = stat_output.split()
+            inode, size, mtime = int(inode_str), int(size_str), int(mtime_str)
+
+            if known_inode is None:
+                read_offset = size
+                rotated = False
+            else:
+                rotated = inode != known_inode
+                read_offset = 0 if rotated else min(known_offset or 0, size)
+
+            data = b""
+            if size > read_offset:
+                sftp = client.open_sftp()
+                try:
+                    with sftp.open(path, "r") as remote_file:
+                        remote_file.seek(read_offset)
+                        data = remote_file.read(size - read_offset)
+                finally:
+                    sftp.close()
+
+        return LogChunk(inode=inode, size=size, mtime=mtime, offset=read_offset, data=data, rotated=rotated)
 
     # -- internals -------------------------------------------------------------
 
@@ -158,6 +199,18 @@ class SSHService:
         output = stdout.read().decode(errors="replace")
         if combine_stderr:
             output += stderr.read().decode(errors="replace")
+        return output
+
+    @staticmethod
+    def _exec_with_status(client: paramiko.SSHClient, argv: list[str]) -> str | None:
+        """Like _exec, but returns None on a non-zero exit status instead
+        of whatever partial stdout there was (used for `stat`, where a
+        non-zero exit means "no such file")."""
+        command = " ".join(shlex.quote(part) for part in argv)
+        _, stdout, _stderr = client.exec_command(command, timeout=settings.SSH_CONNECT_TIMEOUT)
+        output = stdout.read().decode(errors="replace")
+        if stdout.channel.recv_exit_status() != 0:
+            return None
         return output
 
     @staticmethod

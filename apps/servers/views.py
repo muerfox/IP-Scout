@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -77,7 +78,7 @@ def server_status_badge(request, pk):
 @login_required
 def server_detail(request, pk):
     server = get_object_or_404(Server, pk=pk)
-    log_sources = server.log_sources.all()
+    log_sources = server.log_sources.annotate(event_count=Count("request_events")).all()
     return render(request, "servers/detail.html", {"server": server, "log_sources": log_sources})
 
 

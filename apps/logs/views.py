@@ -1,4 +1,5 @@
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -9,7 +10,9 @@ from .models import LogSource
 
 @login_required
 def log_source_list(request):
-    log_sources = LogSource.objects.select_related("server").all()
+    log_sources = (
+        LogSource.objects.select_related("server").annotate(event_count=Count("request_events")).all()
+    )
     return render(request, "logs/list.html", {"log_sources": log_sources})
 
 

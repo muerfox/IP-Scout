@@ -11,5 +11,7 @@
   <td class="mono">{{ log_source.path }}</td>
   <td>{{ log_source.format }}</td>
   <td><span class="status-dot {{ log_source.reader_status }}"></span>{{ log_source.reader_status }}</td>
+  <td class="num">{{ log_source.event_count|default:0 }}</td>
+  <td>{{ log_source.last_read_at|default:"—" }}</td>
   <td>{{ log_source.last_event_at|default:"—" }}</td>
 </tr>
