@@ -146,6 +146,43 @@ the failure deterministically instead of depending on ambient
 environment state - same category of fix as the Redis-unreachable test
 two commits back.
 
+**Then the last remaining mocked-only surface got the same treatment:
+SSH itself.** Every prior phase's SSH-connectivity tests used a mocked
+`paramiko.SSHClient` - `apps.servers.services.SSHService` had never
+actually opened a real SSH connection. Ran a real, rootless `sshd`
+(this sandbox's `openssh-server` package, no root needed - a generated
+host key, a generated client keypair, `UsePAM no`, an unprivileged
+port) and pointed a real `Server` row at it. Result: the entire
+ingestion pipeline, unmocked end to end, in one pass -
+
+1. `SSHService.test_connection()` - real paramiko connection, real
+   `uname -s` / `command -v nginx` exec over the wire.
+2. `discover_server_logs` - real SFTP directory listing found a real
+   log file.
+3. `poll_log_source`, called twice - the first call correctly
+   baselined to end-of-file without backfilling the file's existing
+   content (`known_inode=None`'s documented behavior, not a bug);
+   after appending new lines and polling again, a real `stat` over SSH
+   plus a real SFTP range-read pulled back exactly the new bytes.
+4. `NginxLogParser` correctly parsed real combined-format lines and
+   kept only the 503s, discarding a 200 in the same batch.
+5. `IPIntelligenceService.record_sightings_bulk()` correctly dispatched
+   `process_new_ip` only for the genuinely new IP in the batch, not one
+   already known from an earlier manual test - confirmed by reading its
+   own docstring's claimed behavior, not assumed.
+6. That real Celery task chain (drained by a real worker against the
+   real Redis broker) produced a **real WHOIS lookup** for the new IP
+   (`185.231.114.5` -> ASN 197946, "Amnpardaz Soft Corporation") and
+   **real Iran CIDR classification** against the RIPE data from two
+   commits ago (`is_iran=True`, matched `185.231.114.0/24`).
+
+No bugs found, no code changes needed - every piece already worked
+correctly together. This closes the loop: as of this pass, every major
+subsystem (Postgres/migrations, the full test suite, Celery worker +
+beat against a real broker, WHOIS, Iran CIDR classification, GeoIP,
+and now SSH/SFTP log ingestion) has been exercised against something
+real, not a mock, at least once.
+
 Nothing in the UI or API returns fabricated data — every nav entry now
 has a real page behind it, and no result is invented when a source
 (GeoIP, WHOIS, Iran CIDR) has nothing to say. `GEOIP_PROVIDER` defaults
