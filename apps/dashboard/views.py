@@ -1,5 +1,5 @@
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 from apps.incidents.models import RequestEvent
 from apps.ips.models import IPAddress
@@ -7,6 +7,7 @@ from apps.ips.services import IPIntelligenceService
 from apps.logs.models import LogSource
 from apps.servers.models import Server
 
+from .search import resolve_search
 from .workers import WorkerMonitoringService
 
 
@@ -36,3 +37,10 @@ def world_map(request):
 @login_required
 def workers(request):
     return render(request, "dashboard/workers.html", {"statuses": WorkerMonitoringService.build_statuses()})
+
+
+@login_required
+def search(request):
+    """Global search (spec section 41) - always redirects, never renders
+    its own results page."""
+    return redirect(resolve_search(request.GET.get("q", "")))

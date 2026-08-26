@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("map/", views.world_map, name="map"),
     path("workers/", views.workers, name="workers"),
+    path("search/", views.search, name="search"),
     path("settings/whois/", settings_views.settings_whois, name="settings-whois"),
     path("settings/retention/", settings_views.settings_retention, name="settings-retention"),
     path("settings/retention/purge/", settings_views.run_purge_now, name="settings-retention-purge"),

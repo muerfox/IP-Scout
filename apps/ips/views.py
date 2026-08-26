@@ -1,6 +1,6 @@
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, Max, Min
+from django.db.models import Count, Max, Min, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -13,9 +13,26 @@ from .models import IPAddress
 @login_required
 def ip_list(request):
     queryset = IPAddress.objects.all()
+
     query = request.GET.get("q", "").strip()
     if query:
-        queryset = queryset.filter(address__icontains=query)
+        # Free-text: address, organization/network (WHOIS), or country -
+        # everything spec section 41 lists as a global-search criterion
+        # that isn't already its own dedicated filter (cidr/asn below).
+        queryset = queryset.filter(
+            Q(address__icontains=query)
+            | Q(organization__icontains=query)
+            | Q(network__icontains=query)
+            | Q(country_code__iexact=query)
+        )
+
+    cidr = request.GET.get("cidr", "").strip()
+    if cidr:
+        queryset = queryset.filter(address__is_contained_by=cidr)
+
+    asn = request.GET.get("asn", "").strip()
+    if asn.isdigit():
+        queryset = queryset.filter(asn=int(asn))
 
     is_iran = request.GET.get("is_iran")
     if is_iran == "true":
@@ -24,7 +41,15 @@ def ip_list(request):
     paginator = Paginator(queryset, 50)
     page_obj = paginator.get_page(request.GET.get("page"))
     return render(
-        request, "ips/list.html", {"page_obj": page_obj, "query": query, "is_iran": is_iran}
+        request,
+        "ips/list.html",
+        {
+            "page_obj": page_obj,
+            "query": query,
+            "cidr": cidr,
+            "asn": asn,
+            "is_iran": is_iran,
+        },
     )
 
 

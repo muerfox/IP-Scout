@@ -16,14 +16,12 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 9 — retention/purge, worker monitoring, audit log, deployment docs
+## Status: Phase 10 — full REST API + global search
 
-All nine phases of the original roadmap are now implemented: the full
-ingestion → intelligence pipeline, the investigation surfaces, the visual
-layer, and now the operational surfaces - retention/purge, worker
-monitoring, an in-app audit log, and production deployment docs. One
-tracked gap remains beyond the original roadmap: the full REST API (see
-[Roadmap](#roadmap)).
+All nine phases of the original roadmap are implemented, plus the
+tracked gap from Phase 9: the full REST API (spec section 39), its
+example queries (section 40), and global search (section 41) - the last
+three pieces of the spec with no code behind them at all.
 
 Nothing in the UI or API returns fabricated data — unbuilt nav entries
 are disabled rather than linking to pages that don't exist. **No
@@ -35,53 +33,47 @@ defaults to `null`; `CountryNetwork` starts empty (see Phases 6/8). Both
 are real, pluggable, and ready for a deployment that adds a trusted
 source - see Settings → GeoIP / Iran CIDR Sources for current status.
 
-Phase 9, concretely:
+Phase 10, concretely:
 
-- **Retention/purge** (spec section 38) - per-model purge tasks
-  (`RequestEvent`, `WhoisRecord`, and `IPAddress` on its exact compound
-  eligibility rule) orchestrated by `apps.ips.tasks.purge_old_data`,
-  scheduled daily via Celery Beat. The subtle part: `IPCountryHistory`'s
-  FK to `IPAddress` is `CASCADE`, so an IP purge would silently destroy
-  "keep indefinitely" Iran classification history if not excluded - the
-  eligibility query excludes any IP with *any* history row (open or
-  closed), not just currently-Iranian ones, closing that gap explicitly
-  (see the test for this exact scenario).
-- **Worker monitoring** (spec section 34) - a real **Workers** page,
-  combining live Redis queue depth (`LLEN`, no worker needs to be up to
-  see it) with `django-celery-results` (`CELERY_TASK_TRACK_STARTED=True`)
-  for genuine Running/Failed/Completed/Last-execution history, grouped
-  into the five named queues. This added a new real dependency rather
-  than faking historical data Celery doesn't retain on its own.
-- **Audit log surfacing** (spec section 44) - `AuditLogEntry` has existed
-  since Phase 1 with every mutating action already writing to it, but
-  only `/admin` could read it; **Settings → Audit Log** is its first
-  in-app view (filterable by action/result). Not one of spec section
-  61's literal five Settings items, but the roadmap's own Phase 9
-  description names "audit log surfacing" explicitly.
-- **Settings pages** (WHOIS, Retention, GeoIP, Iran CIDR Sources, Users)
-  - read-only displays of the current effective configuration, not
-  editable forms: spec section 51 makes environment variables the single
-  source of truth, so a "Save" button here would either do nothing or
-  require a second, competing configuration path. Retention gets a real
-  **Run Purge Now** action (dispatches the same Celery task the daily
-  schedule uses); Users redirects to `/admin` (already the real
-  user-management UI, not worth duplicating).
-- **Production deployment docs** - `deploy/systemd/*.service` (Gunicorn,
-  a WHOIS-only Celery worker with its own concurrency limit per spec
-  section 35, a worker for everything else, Celery Beat) and
-  `deploy/nginx/ipscout.conf` for the traditional (non-Docker) path,
-  plus a concrete step-by-step README walkthrough - resolving the "lands
-  in Phase 9" deferral from the Phase 1 README.
+- **Read-only DRF ViewSets** for `Server` (no `ssh_private_key` in any
+  response, ever - a dedicated test asserts this explicitly), `LogSource`,
+  `IPAddress`, `RequestEvent` (registered at `/api/v1/503/`),
+  `CountryNetwork`, plus `/api/v1/iran/ips/` - every path spec section 39
+  names, verified to match by inspecting the router's actual generated
+  URL patterns. Filtering/searching/ordering come from the
+  `DjangoFilterBackend`/`SearchFilter`/`OrderingFilter` wired globally
+  since Phase 1; `?country=IR`, `?is_iran=true`, `?days=7` (section 40's
+  literal examples) are handled explicitly since the query param names
+  don't match the underlying field names 1:1.
+- Read-only **on purpose**: mutating a server (touches encrypted SSH
+  credentials), toggling a log source, or forcing WHOIS/Iran
+  recalculation stay web-UI-only actions - audit-logged, CSRF-protected
+  forms - rather than opening a second, parallel JSON surface for the
+  same security-sensitive operations.
+- **`/api/v1/iran/export/`** and **`/api/v1/workers/`** reuse the exact
+  same `IPExportService`/`WorkerMonitoringService` code the web pages use
+  - no duplicated logic. The export endpoint is a real `APIView` rather
+  than a bare reuse of the web view function, specifically so it goes
+  through JWT authentication (a plain `@login_required` view only
+  recognizes a session cookie).
+- **Global search** (spec section 41): a topbar search box on every page,
+  `resolve_search()` routes a query to the right destination - a known
+  IP's detail page, an unknown IP's (empty) address search, a CIDR's
+  contained-IP list (via the same `is_contained_by` lookup the Iran
+  export uses), an ASN's IP list, an exact server name/hostname match's
+  server page, or a free-text search across address/organization/
+  network/country. Never creates a record for something not seen before.
 
-Prior phases, briefly: server/SSH management with encrypted credentials
-and Nginx log discovery (Phase 2); an incremental log reader and
-configurable parser feeding 503-only `RequestEvent` rows (Phase 3); the
-full `IPAddress` schema and Celery IP queue (Phase 4); real WHOIS
-execution with a 7-day cache (Phase 5); real Iran CIDR matching, history,
-and monthly validation (Phase 6); the IP detail page, 503 intelligence
-dashboards, and Iran IP export (Phase 7); Chart.js dashboards and the
-Leaflet world map, plus GeoIP (Phase 8). See each phase's commit message
-for the full detail.
+Prior phases, briefly: retention/purge, worker monitoring, an in-app
+audit log, and production deployment docs (Phase 9); Chart.js dashboards,
+the Leaflet world map, and GeoIP (Phase 8); the IP detail page, 503
+intelligence dashboards, and Iran IP export (Phase 7); real Iran CIDR
+matching, history, and monthly validation (Phase 6); real WHOIS execution
+with a 7-day cache (Phase 5); the full `IPAddress` schema and Celery IP
+queue (Phase 4); an incremental log reader and configurable parser
+feeding 503-only `RequestEvent` rows (Phase 3); server/SSH management
+with encrypted credentials and Nginx log discovery (Phase 2). See each
+phase's commit message for the full detail.
 
 ## Project layout
 
@@ -90,7 +82,7 @@ config/            settings (base/development/production/test), urls, celery, ws
 apps/
   common/          TimeStampedModel, EncryptedTextField, redis_lock, request-IP helper
   users/           custom User model, login/logout, audit log + its view
-  dashboard/       nav tree, dashboard/map/workers/settings views, chart+map+worker services
+  dashboard/       nav tree, dashboard/map/workers/settings/search views, chart+map+worker+search services
   servers/         Server model, SSHService (test/discover/poll_log), CRUD views
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
   ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip + purge tasks, IP list + detail
@@ -98,7 +90,7 @@ apps/
   geo/             GeoIPProvider (null/maxmind), GeoIPService, enrich_ip
   incidents/       RequestEvent, 503 Overview/IPs/Timeline views, purge task    (rollups: still open)
   iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation, export
-  api/             JWT auth, /dashboard/ + /map/ endpoints  (full REST API: still open, see Roadmap)
+  api/             JWT auth + full read-only REST API (servers/logs/ips/503/iran/export/workers)
 templates/         base layout + per-app templates
 static/            CSS (NOC black/white/gray theme), dashboard/map JS
 docker/            nginx.conf for the Docker Compose reverse-proxy service
@@ -173,8 +165,8 @@ Built incrementally per the project spec (section 62):
 6. **Iran CIDR database, matching, history, monthly validation**.
 7. **IP detail page, 503 intelligence, timeline, exports**.
 8. **Dashboard charts, world map, filters** - including `apps.geo`'s GeoIP provider abstraction, since the map needs coordinates.
-9. **Retention/purge, worker monitoring, audit log surfacing, production deployment docs** (this repo). All nine phases of the original roadmap are now complete.
-10. *(tracked gap, not in the original 9-phase roadmap)* The full REST API from spec section 39 - ViewSets/serializers for servers, log sources, IPs, 503 events, Iran CIDRs/exports, workers, with filtering/search/ordering/pagination. Only `/api/v1/auth/`, `/api/v1/dashboard/`, and `/api/v1/map/` exist today; everything else in this repo is web-UI-only.
+9. **Retention/purge, worker monitoring, audit log surfacing, production deployment docs**. All nine phases of the original roadmap are complete.
+10. **Full REST API (spec section 39-40) + global search (section 41)** (this repo) - the tracked gap from Phase 9, now closed. *(Not in the original 9-phase roadmap, but explicitly asked for in the spec.)*
 
 ## Production deployment
 

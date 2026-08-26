@@ -4,10 +4,12 @@
 {% block topbar_title %}IP Addresses{% endblock %}
 
 {% block content %}
-  <h1>IP Addresses <span class="subtitle">{{ page_obj.paginator.count }} total{% if is_iran == "true" %} · Iranian only{% endif %}</span></h1>
+  <h1>IP Addresses <span class="subtitle">{{ page_obj.paginator.count }} total{% if is_iran == "true" %} · Iranian only{% endif %}{% if cidr %} · within {{ cidr }}{% endif %}{% if asn %} · AS{{ asn }}{% endif %}</span></h1>
 
   <form method="get" class="search-bar">
-    <input type="text" name="q" value="{{ query }}" placeholder="Search by address…">
+    <input type="text" name="q" value="{{ query }}" placeholder="Search address, org, network…">
+    {% if cidr %}<input type="hidden" name="cidr" value="{{ cidr }}">{% endif %}
+    {% if asn %}<input type="hidden" name="asn" value="{{ asn }}">{% endif %}
     {% if is_iran == "true" %}
       <input type="hidden" name="is_iran" value="true">
       <a class="btn btn-sm" href="?q={{ query }}">Show all</a>
@@ -49,11 +51,11 @@
 
     <div class="pagination">
       {% if page_obj.has_previous %}
-        <a class="btn btn-sm" href="?q={{ query }}&is_iran={{ is_iran }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+        <a class="btn btn-sm" href="?q={{ query }}&cidr={{ cidr }}&asn={{ asn }}&is_iran={{ is_iran }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
       {% endif %}
       <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
       {% if page_obj.has_next %}
-        <a class="btn btn-sm" href="?q={{ query }}&is_iran={{ is_iran }}&page={{ page_obj.next_page_number }}">Next ›</a>
+        <a class="btn btn-sm" href="?q={{ query }}&cidr={{ cidr }}&asn={{ asn }}&is_iran={{ is_iran }}&page={{ page_obj.next_page_number }}">Next ›</a>
       {% endif %}
     </div>
   {% else %}

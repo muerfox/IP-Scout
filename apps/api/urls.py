@@ -16,5 +16,7 @@ urlpatterns = [
     path("docs/", SpectacularSwaggerView.as_view(url_name="api:schema"), name="docs"),
     path("dashboard/", views.DashboardDataView.as_view(), name="dashboard"),
     path("map/", views.MapDataView.as_view(), name="map"),
+    path("iran/export/", views.IranExportAPIView.as_view(), name="iran-export"),
+    path("workers/", views.WorkersAPIView.as_view(), name="workers"),
     path("", include(router.urls)),
 ]

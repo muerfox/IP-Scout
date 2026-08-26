@@ -17,6 +17,11 @@
     <div>
       <div class="topbar">
         <div>{% block topbar_title %}{% endblock %}</div>
+        {% if user.is_authenticated %}
+          <form method="get" action="{% url 'dashboard:search' %}" class="topbar-search">
+            <input type="text" name="q" placeholder="Search IP, CIDR, ASN, host…">
+          </form>
+        {% endif %}
         <div class="topbar-user">
           {% if user.is_authenticated %}
             {{ user.username }}

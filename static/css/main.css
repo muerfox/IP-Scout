@@ -82,6 +82,19 @@ a:hover { color: var(--green); }
   background: var(--bg-panel);
 }
 
+.topbar-search { flex: 1; max-width: 360px; margin: 0 20px; }
+.topbar-search input {
+  width: 100%;
+  background: #0e0e0e;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.topbar-search input:focus { outline: none; border-color: var(--green); }
+
 .topbar-user { color: var(--text-dim); font-size: 13px; }
 .topbar-user a { color: var(--text-dim); margin-left: 12px; }
 .topbar-user a:hover { color: var(--red); }
