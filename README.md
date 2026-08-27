@@ -183,6 +183,28 @@ beat against a real broker, WHOIS, Iran CIDR classification, GeoIP,
 and now SSH/SFTP log ingestion) has been exercised against something
 real, not a mock, at least once.
 
+One more gap, present since Phase 1: `requirements/base.txt` has
+always pinned `Django>=5.2,<5.3`, but every verification pass above -
+including all of the real-infrastructure work described just above -
+actually ran against Django 5.0.14, the version already installed in
+this shared sandbox. `manage.py check` and `manage.py test` never
+actually exercised the declared target version. Rather than upgrade
+the sandbox's shared, global Django install (other concurrent sessions
+were using it, confirmed via `ps aux`), built an isolated virtualenv
+(`virtualenv --system-site-packages`, since `python3 -m venv` needs
+`python3.11-venv`, which needs root) and installed the real
+`requirements/development.txt` into just that venv - resolving
+cleanly to Django 5.2.17 (`pip check`: no broken requirements). Ran,
+for real, inside that venv: `manage.py check` (clean), the full test
+suite (**319/319 passing**), and a live `runserver` - a real login
+(CSRF token fetched, session cookie issued, `verify52` superuser
+authenticated), a real authenticated dashboard GET (`200`, the actual
+rendered "Dashboard — IP Scout" page, not an error page), a real
+`/ips/` and `/admin/` GET, all against the same real Postgres/Redis
+used throughout this session. No bugs found, no code changes needed -
+the version `requirements/base.txt` has always declared genuinely
+works, now actually proven rather than assumed.
+
 Nothing in the UI or API returns fabricated data — every nav entry now
 has a real page behind it, and no result is invented when a source
 (GeoIP, WHOIS, Iran CIDR) has nothing to say. `GEOIP_PROVIDER` defaults
