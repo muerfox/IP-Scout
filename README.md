@@ -205,6 +205,26 @@ used throughout this session. No bugs found, no code changes needed -
 the version `requirements/base.txt` has always declared genuinely
 works, now actually proven rather than assumed.
 
+The production settings module (`config/settings/production.py`) had
+never been run either - every prior check/test/runserver pass in this
+session used `config.settings.test` or plain `base.py` defaults, never
+`DEBUG=False` with WhiteNoise, Gunicorn, and the HSTS/proxy-SSL
+settings actually wired together the way the Docker/systemd deploy
+paths described below run it for real. Verified in the same venv:
+`collectstatic` under production settings (127 files, WhiteNoise's
+`CompressedManifestStaticFilesStorage` correctly hash-named and
+gzip/brotli-compressed all of them into a real manifest); `gunicorn
+config.wsgi:application` (the exact command the Dockerfile and
+`ipscout-gunicorn.service` both run) booting clean with two workers;
+a real login flow and a real static-file fetch through it (`200`,
+correct `Cache-Control: immutable` on the hashed filename); and the
+`SECURE_PROXY_SSL_HEADER` trust chain nginx's TLS termination depends
+on - no `Strict-Transport-Security` header on a plain request, but a
+real one appears the moment `X-Forwarded-Proto: https` is sent, proving
+Django only trusts that header coming through the proxy, not a client
+that could spoof it directly if nginx weren't in front. No bugs found,
+no code changes needed.
+
 Nothing in the UI or API returns fabricated data — every nav entry now
 has a real page behind it, and no result is invented when a source
 (GeoIP, WHOIS, Iran CIDR) has nothing to say. `GEOIP_PROVIDER` defaults
