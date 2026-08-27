@@ -6,10 +6,11 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.locks import LockHeldError
 from apps.incidents.models import RequestEvent
 from apps.ips.models import IPAddress
 from apps.servers.models import Server
-from apps.servers.services import LogChunk
+from apps.servers.services import LogChunk, SSHConnectionError
 
 from .models import LogSource
 from .services import NginxLogReader
@@ -144,6 +145,36 @@ class DiscoverServerLogsTaskTests(TestCase):
         self.assertEqual(LogSource.objects.filter(server=self.server).count(), 1)
         existing.refresh_from_db()
         self.assertTrue(existing.enabled)  # discovery must not clobber an already-enabled source
+
+    def test_missing_server_returns_silently(self):
+        from apps.servers.tasks import discover_server_logs
+
+        discover_server_logs(999999)  # must not raise
+
+    @patch("apps.servers.tasks.SSHService")
+    def test_ssh_connection_error_sets_last_error_and_records_failure(self, mock_service_cls):
+        from apps.servers.tasks import discover_server_logs
+        from apps.users.models import AuditLogEntry
+
+        mock_service_cls.return_value.discover_logs.side_effect = SSHConnectionError("auth failed")
+
+        discover_server_logs(self.server.id)
+
+        self.server.refresh_from_db()
+        self.assertEqual(self.server.last_error, "auth failed")
+        self.assertEqual(LogSource.objects.filter(server=self.server).count(), 0)
+
+        entry = AuditLogEntry.objects.get(action="server.discover_logs")
+        self.assertEqual(entry.result, AuditLogEntry.Result.FAILURE)
+        self.assertEqual(entry.metadata["error"], "auth failed")
+
+    @patch("apps.servers.tasks.redis_lock")
+    def test_lock_held_is_skipped_silently(self, mock_lock):
+        from apps.servers.tasks import discover_server_logs
+
+        mock_lock.side_effect = LockHeldError(f"ssh:discover:{self.server.id}")
+        discover_server_logs(self.server.id)  # must not raise
+        self.assertEqual(LogSource.objects.filter(server=self.server).count(), 0)
 
 
 class NginxLogReaderTests(TestCase):
