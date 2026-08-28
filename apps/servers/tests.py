@@ -357,6 +357,75 @@ class ServerViewTests(TestCase):
         self.client.post(reverse("servers:test-connection", args=[server.pk]))
         mock_task.delay.assert_called_once_with(server.id, user_id=self.user.id)
 
+    @patch("apps.servers.views.test_server_connection")
+    def test_test_connection_htmx_returns_status_badge_partial(self, mock_task):
+        server = make_server(name="edge-8b")
+        server.save()
+        response = self.client.post(
+            reverse("servers:test-connection", args=[server.pk]), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/partials/status_badge.html")
+
+    @patch("apps.servers.views.discover_server_logs")
+    def test_discover_logs_enqueues_task(self, mock_task):
+        server = make_server(name="edge-9")
+        server.save()
+        response = self.client.post(reverse("servers:discover-logs", args=[server.pk]))
+        mock_task.delay.assert_called_once_with(server.id, user_id=self.user.id)
+        self.assertRedirects(response, reverse("servers:detail", args=[server.pk]))
+
+    def test_create_get_renders_blank_form(self):
+        response = self.client.get(reverse("servers:create"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/form.html")
+        self.assertTrue(response.context["is_new"])
+
+    def test_update_get_renders_populated_form(self):
+        server = make_server(name="edge-10")
+        server.save()
+        response = self.client.get(reverse("servers:update", args=[server.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["is_new"])
+        self.assertEqual(response.context["server"], server)
+
+    def test_update_post_saves_changes(self):
+        server = make_server(name="edge-11")
+        server.save()
+        response = self.client.post(
+            reverse("servers:update", args=[server.pk]),
+            {
+                "name": "edge-11-renamed",
+                "hostname": server.hostname,
+                "ip_address": "",
+                "ssh_port": server.ssh_port,
+                "ssh_username": server.ssh_username,
+                "ssh_auth_type": server.ssh_auth_type,
+                "enabled": True,
+                "ssh_private_key": "-----BEGIN KEY-----\nabc\n-----END KEY-----",
+                "log_search_paths_text": "",
+            },
+        )
+        server.refresh_from_db()
+        self.assertEqual(server.name, "edge-11-renamed")
+        self.assertRedirects(response, reverse("servers:detail", args=[server.pk]))
+
+    def test_status_badge_renders_partial(self):
+        server = make_server(name="edge-12")
+        server.save()
+        response = self.client.get(reverse("servers:status-badge", args=[server.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/partials/status_badge.html")
+
+    def test_toggle_enabled_htmx_returns_status_badge_partial(self):
+        server = make_server(name="edge-13")
+        server.save()
+        response = self.client.post(
+            reverse("servers:toggle-enabled", args=[server.pk]), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/partials/status_badge.html")
+
 
 class TestServerConnectionTaskTests(TestCase):
     """`apps.servers.tasks.test_server_connection` - the Celery task behind
