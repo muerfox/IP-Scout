@@ -207,6 +207,28 @@ class IranApiTests(ApiTestBase):
         response = self.client.get("/api/v1/iran/export/")
         self.assertIn(response.status_code, (401, 403))
 
+    def test_iran_export_csv(self):
+        now = timezone.now()
+        IPAddress.objects.create(
+            address="5.1.1.1", version=4, first_seen_at=now, last_seen_at=now, is_iran=True
+        )
+        response = self.client.get(
+            "/api/v1/iran/export/", {"format": "csv", "status_503_only": "false"}
+        )
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("5.1.1.1", response.content.decode())
+
+    def test_iran_export_json(self):
+        now = timezone.now()
+        IPAddress.objects.create(
+            address="5.1.1.1", version=4, first_seen_at=now, last_seen_at=now, is_iran=True
+        )
+        response = self.client.get(
+            "/api/v1/iran/export/", {"format": "json", "status_503_only": "false"}
+        )
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertIn("5.1.1.1", response.content.decode())
+
 
 class WorkersApiTests(ApiTestBase):
     def test_returns_five_queues(self):
