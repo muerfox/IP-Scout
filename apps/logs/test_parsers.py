@@ -116,3 +116,23 @@ class NginxLogParserRawFormatTests(unittest.TestCase):
         self.assertEqual(parsed.status, 503)
         self.assertEqual(parsed.method, "")
         self.assertEqual(parsed.uri, "")
+
+    def test_invalid_time_local_raises(self):
+        parser = NginxLogParser("$remote_addr [$time_local]")
+        with self.assertRaises(LogParseError):
+            parser.parse_line("1.2.3.4 [not-a-valid-date]")
+
+    def test_format_without_status_field_raises(self):
+        parser = NginxLogParser("$remote_addr [$time_local]")
+        with self.assertRaises(LogParseError):
+            parser.parse_line("1.2.3.4 [26/Aug/2026:04:30:00 +0000]")
+
+    def test_non_numeric_body_bytes_sent_falls_back_to_zero(self):
+        parser = NginxLogParser("$remote_addr [$time_local] $status $body_bytes_sent")
+        parsed = parser.parse_line("1.2.3.4 [26/Aug/2026:04:30:00 +0000] 200 abc")
+        self.assertEqual(parsed.bytes, 0)
+
+    def test_non_numeric_request_time_falls_back_to_none(self):
+        parser = NginxLogParser("$remote_addr [$time_local] $status $request_time")
+        parsed = parser.parse_line("1.2.3.4 [26/Aug/2026:04:30:00 +0000] 200 abc")
+        self.assertIsNone(parsed.request_time)
