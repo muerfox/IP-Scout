@@ -207,6 +207,59 @@ class IpListViewTests(TestCase):
         self.assertContains(response, "1.2.3.4")
         self.assertNotContains(response, "5.6.7.8")
 
+    def test_cidr_filter(self):
+        IPAddress.objects.create(address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0)
+        IPAddress.objects.create(address="9.9.9.9", version=4, first_seen_at=T0, last_seen_at=T0)
+        response = self.client.get(reverse("ips:list"), {"cidr": "1.2.3.0/24"})
+        self.assertContains(response, "1.2.3.4")
+        self.assertNotContains(response, "9.9.9.9")
+
+    def test_asn_filter(self):
+        IPAddress.objects.create(address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0, asn=64500)
+        IPAddress.objects.create(address="9.9.9.9", version=4, first_seen_at=T0, last_seen_at=T0, asn=64501)
+        response = self.client.get(reverse("ips:list"), {"asn": "64500"})
+        self.assertContains(response, "1.2.3.4")
+        self.assertNotContains(response, "9.9.9.9")
+
+    def test_non_numeric_asn_is_ignored(self):
+        IPAddress.objects.create(address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0)
+        response = self.client.get(reverse("ips:list"), {"asn": "not-a-number"})
+        self.assertContains(response, "1.2.3.4")
+
+
+class WhoisStatusCellViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:whois-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_renders_partial(self):
+        response = self.client.get(reverse("ips:whois-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "ips/partials/whois_status.html")
+
+
+class IranStatusCellViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:iran-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_renders_partial(self):
+        response = self.client.get(reverse("ips:iran-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "ips/partials/iran_status.html")
+
 
 class RecalculateIranViewTests(TestCase):
     def setUp(self):
@@ -291,6 +344,10 @@ class IpDetailViewTests(TestCase):
             ssh_private_key="pw",
         )
         response = self.client.get(reverse("ips:detail", args=[self.ip.pk]), {"server": other_server.pk})
+        self.assertEqual(len(response.context["page_obj"].object_list), 0)
+
+    def test_host_filter(self):
+        response = self.client.get(reverse("ips:detail", args=[self.ip.pk]), {"host": "other.example.com"})
         self.assertEqual(len(response.context["page_obj"].object_list), 0)
 
 
