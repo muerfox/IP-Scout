@@ -347,6 +347,19 @@ class CidrViewTests(TestCase):
         self.assertFalse(network.enabled)
         self.assertEqual(response.status_code, 302)
 
+    def test_toggle_enabled_htmx_returns_partial(self):
+        network = CountryNetwork.objects.create(country_code="IR", cidr="5.1.1.0/24", source="manual")
+        response = self.client.post(
+            reverse("iran:cidr-toggle-enabled", args=[network.pk]), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "iran/partials/cidr_row.html")
+
+    def test_create_get_renders_blank_form_defaulting_to_ir(self):
+        response = self.client.get(reverse("iran:cidr-add"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["form"].initial["country_code"], "IR")
+
     @override_settings(IRAN_CIDR_SOURCE="static")
     def test_note_reflects_static_source(self):
         response = self.client.get(reverse("iran:cidrs"))
@@ -361,6 +374,11 @@ class CidrViewTests(TestCase):
         self.client.logout()
         response = self.client.get(reverse("iran:changes"))
         self.assertEqual(response.status_code, 302)
+
+    def test_changes_list_renders(self):
+        response = self.client.get(reverse("iran:changes"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "iran/changes.html")
 
     def test_iranian_ips_redirects_to_filtered_ip_list(self):
         response = self.client.get(reverse("iran:iranian-ips"))
