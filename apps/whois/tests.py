@@ -4,18 +4,19 @@ import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.locks import LockHeldError
 from apps.ips.models import IPAddress
 
 from .models import WhoisRecord
-from .services import WhoisService
-from .tasks import _inetnum_to_cidr, _parse_asn
+from .services import WhoisLookupResult, WhoisService
+from .tasks import _guess_whois_server, _inetnum_to_cidr, _parse_asn, _run_lookup
 
 User = get_user_model()
 
@@ -123,6 +124,18 @@ class InetnumToCidrTests(unittest.TestCase):
     def test_garbage_returns_none(self):
         self.assertIsNone(_inetnum_to_cidr("not a range"))
 
+    def test_range_with_invalid_endpoint_returns_none(self):
+        self.assertIsNone(_inetnum_to_cidr("5.1.0.0 - not-an-ip"))
+
+
+class GuessWhoisServerTests(unittest.TestCase):
+    def test_returns_first_matching_referral_key(self):
+        generic = {"whois": ["whois.ripe.net"], "netname": ["TEST-NET"]}
+        self.assertEqual(_guess_whois_server(generic), "whois.ripe.net")
+
+    def test_no_referral_key_returns_empty_string(self):
+        self.assertEqual(_guess_whois_server({"netname": ["TEST-NET"]}), "")
+
 
 class PerformWhoisLookupTaskTests(TestCase):
     def setUp(self):
@@ -186,6 +199,31 @@ class PerformWhoisLookupTaskTests(TestCase):
 
         with self.settings(WHOIS_BINARY=str(self.fake_whois)):
             perform_whois_lookup(999999)
+
+    @patch("apps.whois.tasks.redis_lock")
+    def test_lock_held_is_skipped_silently(self, mock_lock):
+        from .tasks import perform_whois_lookup
+
+        mock_lock.side_effect = LockHeldError(f"whois:{self.ip.address}")
+        with self.settings(WHOIS_BINARY=str(self.fake_whois)):
+            perform_whois_lookup(self.ip.id)  # must not raise
+        self.assertEqual(WhoisRecord.objects.count(), 0)
+
+    @patch("apps.whois.tasks.WhoisService")
+    def test_retryable_failure_schedules_a_retry(self, mock_service_cls):
+        mock_service_cls.return_value.lookup.return_value = WhoisLookupResult(
+            success=False, error="whois timed out after 5s", retryable=True
+        )
+        mock_task = Mock()
+        mock_task.request.retries = 0
+        mock_task.retry.side_effect = RuntimeError("retry-triggered")
+
+        with self.assertRaises(RuntimeError):
+            _run_lookup(mock_task, self.ip)
+
+        mock_task.retry.assert_called_once()
+        self.assertEqual(mock_task.retry.call_args.kwargs["countdown"], 30)
+        self.assertEqual(WhoisRecord.objects.count(), 0)
 
 
 class ForceWhoisViewTests(TestCase):
