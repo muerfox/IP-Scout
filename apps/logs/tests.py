@@ -320,3 +320,70 @@ class PollLogSourceTaskTests(TestCase):
 
         poll_log_source(self.log_source.id)  # must not raise
         mock_reader_cls.assert_not_called()
+
+    def test_missing_log_source_returns_silently(self):
+        from .tasks import poll_log_source
+
+        poll_log_source(999999)  # must not raise
+
+    @patch("apps.logs.tasks.NginxLogReader")
+    def test_polls_and_logs_rotation(self, mock_reader_cls):
+        from .services import PollSummary
+        from .tasks import poll_log_source
+
+        mock_reader_cls.return_value.poll.return_value = PollSummary(
+            events_created=0, parse_errors=0, lines_read=0, rotated=True
+        )
+
+        poll_log_source(self.log_source.id)  # must not raise; exercises the rotated-log branch
+
+    @patch("apps.logs.tasks.NginxLogReader")
+    def test_polls_and_logs_events_created(self, mock_reader_cls):
+        from .services import PollSummary
+        from .tasks import poll_log_source
+
+        mock_reader_cls.return_value.poll.return_value = PollSummary(
+            events_created=5, parse_errors=0, lines_read=10, rotated=False
+        )
+
+        poll_log_source(self.log_source.id)  # must not raise; exercises the events-created branch
+
+
+class PollAllLogSourcesTaskTests(TestCase):
+    def setUp(self):
+        self.server = Server.objects.create(
+            name="edge-fanout",
+            hostname="edge-fanout.example.com",
+            ssh_username="deploy",
+            ssh_auth_type=Server.AuthType.PASSWORD,
+            ssh_private_key="pw",
+        )
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_dispatches_one_task_per_enabled_source(self, mock_delay):
+        from .tasks import poll_all_log_sources
+
+        enabled = LogSource.objects.create(
+            server=self.server, name="access.log", path="/var/log/nginx/access.log", enabled=True
+        )
+        LogSource.objects.create(
+            server=self.server, name="disabled.log", path="/var/log/nginx/disabled.log", enabled=False
+        )
+
+        poll_all_log_sources()
+
+        mock_delay.assert_called_once_with(enabled.id)
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_skips_sources_on_disabled_server(self, mock_delay):
+        from .tasks import poll_all_log_sources
+
+        self.server.enabled = False
+        self.server.save()
+        LogSource.objects.create(
+            server=self.server, name="access.log", path="/var/log/nginx/access.log", enabled=True
+        )
+
+        poll_all_log_sources()
+
+        mock_delay.assert_not_called()
