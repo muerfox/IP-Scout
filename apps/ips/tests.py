@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -52,7 +52,7 @@ class NeedsWhoisCheckTests(unittest.TestCase):
             self.assertTrue(IPIntelligenceService.needs_whois_check(ip))
 
 
-T0 = datetime(2026, 8, 26, 4, 30, tzinfo=dt_timezone.utc)
+T0 = datetime(2026, 8, 26, 4, 30, tzinfo=UTC)
 
 
 class IPIntelligenceServiceTests(TestCase):
@@ -163,6 +163,7 @@ class ProcessNewIpTaskTests(TestCase):
     @patch("apps.ips.tasks.redis_lock")
     def test_lock_held_is_skipped_silently(self, mock_lock):
         from apps.common.locks import LockHeldError
+
         from .tasks import process_new_ip
 
         mock_lock.side_effect = LockHeldError(f"ip:process:{self.ip.address}")

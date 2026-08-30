@@ -16,7 +16,6 @@ import stat as stat_module
 from dataclasses import dataclass
 
 import paramiko
-
 from django.conf import settings
 
 from .models import Server

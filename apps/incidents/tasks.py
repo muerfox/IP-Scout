@@ -5,7 +5,6 @@ import logging
 from datetime import timedelta
 
 from celery import shared_task
-
 from django.conf import settings
 from django.utils import timezone
 
@@ -21,5 +20,9 @@ def purge_old_request_events() -> int:
     count = queryset.count()
     if count:
         queryset.delete()
-    logger.info("purge_old_request_events: deleted %d event(s) older than %d days", count, settings.REQUEST_RETENTION_DAYS)
+    logger.info(
+        "purge_old_request_events: deleted %d event(s) older than %d days",
+        count,
+        settings.REQUEST_RETENTION_DAYS,
+    )
     return count

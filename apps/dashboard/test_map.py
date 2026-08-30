@@ -63,4 +63,6 @@ class GridSizeForZoomTests(unittest.TestCase):
         self.assertEqual(MapAggregationService.grid_size_for_zoom(20), 0.5)
 
     def test_negative_zoom_does_not_exceed_zoom_zero_size(self):
-        self.assertEqual(MapAggregationService.grid_size_for_zoom(-5), MapAggregationService.grid_size_for_zoom(0))
+        self.assertEqual(
+            MapAggregationService.grid_size_for_zoom(-5), MapAggregationService.grid_size_for_zoom(0)
+        )

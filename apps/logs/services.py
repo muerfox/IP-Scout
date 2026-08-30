@@ -41,7 +41,9 @@ class NginxLogReader:
             self.log_source.last_error = f"Log file not found: {self.log_source.path}"
             self.log_source.last_read_at = timezone.now()
             self.log_source.save(update_fields=["last_error", "last_read_at", "updated_at"])
-            return PollSummary(events_created=0, parse_errors=0, lines_read=0, rotated=False, file_missing=True)
+            return PollSummary(
+                events_created=0, parse_errors=0, lines_read=0, rotated=False, file_missing=True
+            )
 
         # Only advance byte_offset past complete lines - a trailing line
         # with no terminating \n is nginx mid-write and must be re-read
@@ -101,7 +103,14 @@ class NginxLogReader:
             f"{parse_errors} line(s) failed to parse on last read" if parse_errors else ""
         )
         self.log_source.save(
-            update_fields=["inode", "byte_offset", "last_read_at", "last_event_at", "last_error", "updated_at"]
+            update_fields=[
+                "inode",
+                "byte_offset",
+                "last_read_at",
+                "last_event_at",
+                "last_error",
+                "updated_at",
+            ]
         )
 
         return PollSummary(

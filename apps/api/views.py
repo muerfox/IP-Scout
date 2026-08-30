@@ -24,7 +24,9 @@ class DashboardDataView(APIView):
 
     def get(self, request):
         period = request.query_params.get("period", "24h")
-        start, end = resolve_period(period, request.query_params.get("start"), request.query_params.get("end"))
+        start, end = resolve_period(
+            period, request.query_params.get("start"), request.query_params.get("end")
+        )
         series = DashboardAnalyticsService.build(start, end)
         return Response(
             {"period": period, "start": start.isoformat(), "end": end.isoformat(), **asdict(series)}
@@ -40,7 +42,9 @@ class MapDataView(APIView):
             status = "503"
 
         period = request.query_params.get("period", "24h")
-        start, end = resolve_period(period, request.query_params.get("start"), request.query_params.get("end"))
+        start, end = resolve_period(
+            period, request.query_params.get("start"), request.query_params.get("end")
+        )
 
         try:
             zoom = int(request.query_params.get("zoom", 2))

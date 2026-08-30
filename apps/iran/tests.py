@@ -290,6 +290,7 @@ class ClassifyIpTaskTests(TestCase):
     @patch("apps.iran.tasks.redis_lock")
     def test_lock_held_is_skipped_silently(self, mock_lock):
         from apps.common.locks import LockHeldError
+
         from .tasks import classify_ip
 
         mock_lock.side_effect = LockHeldError(f"iran:{self.ip.address}")

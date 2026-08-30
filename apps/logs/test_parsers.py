@@ -1,5 +1,4 @@
 import unittest
-from datetime import timezone as dt_timezone
 
 from .parsers import LogParseError, NginxLogParser, compile_format, split_request
 

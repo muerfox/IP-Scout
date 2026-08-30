@@ -10,18 +10,15 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.response import Response
-
-from django.utils import timezone
 
 from apps.incidents.models import RequestEvent
 from apps.ips.models import IPAddress
 from apps.iran.models import CountryNetwork
 from apps.logs.models import LogSource
 from apps.servers.models import Server
-from apps.whois.models import WhoisRecord
 
 from .serializers import (
     CountryNetworkSerializer,

@@ -118,7 +118,9 @@ class DashboardAnalyticsService:
         )
 
         return DashboardSeries(
-            requests_over_time=[{"bucket": r["bucket"].isoformat(), "count": r["count"]} for r in requests_over_time],
+            requests_over_time=[
+                {"bucket": r["bucket"].isoformat(), "count": r["count"]} for r in requests_over_time
+            ],
             unique_ips_over_time=[
                 {"bucket": r["bucket"].isoformat(), "count": r["count"]} for r in unique_ips_over_time
             ],

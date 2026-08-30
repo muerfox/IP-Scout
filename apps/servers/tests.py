@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import paramiko
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -486,7 +485,9 @@ class TestServerConnectionTaskTests(TestCase):
     def test_failure_without_error_message_falls_back_to_generic_text(self, mock_service_cls):
         from .tasks import test_server_connection
 
-        mock_service_cls.return_value.test_connection.return_value = ConnectionTestResult(success=False, error=None)
+        mock_service_cls.return_value.test_connection.return_value = ConnectionTestResult(
+            success=False, error=None
+        )
 
         test_server_connection(self.server.id)
 

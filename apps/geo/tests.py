@@ -75,7 +75,9 @@ class MaxMindGeoIPProviderTests(unittest.TestCase):
 
         self.assertEqual(
             result,
-            GeoResult(country_code="IR", country_name="Iran", continent="AS", latitude=35.7239, longitude=51.4329),
+            GeoResult(
+                country_code="IR", country_name="Iran", continent="AS", latitude=35.7239, longitude=51.4329
+            ),
         )
         mock_reader.city.assert_called_once_with("2.57.3.1")
 
@@ -143,6 +145,7 @@ class EnrichIpTaskTests(TestCase):
     @patch("apps.geo.tasks.redis_lock")
     def test_lock_held_is_skipped_silently(self, mock_lock):
         from apps.common.locks import LockHeldError
+
         from .tasks import enrich_ip
 
         mock_lock.side_effect = LockHeldError(f"geo:{self.ip.address}")
