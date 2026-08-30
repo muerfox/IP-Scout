@@ -46,7 +46,7 @@ class IranCIDRService:
                 # Close out whatever period was open (a no-op if the IP
                 # was never Iranian - the filter simply matches nothing).
                 IPCountryHistory.objects.filter(ip=ip, valid_until__isnull=True).update(valid_until=now)
-                if new_is_iran:
+                if match is not None:
                     IPCountryHistory.objects.create(
                         ip=ip,
                         country_code=IRAN_COUNTRY_CODE,

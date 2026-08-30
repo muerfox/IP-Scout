@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from config.env import env_bool, env_int, env_list, env_str, parse_database_url
 
@@ -291,7 +292,7 @@ SSH_CONNECT_TIMEOUT = env_int("SSH_CONNECT_TIMEOUT", 10)
 # Logging (structured)
 # ---------------------------------------------------------------------------
 
-LOGGING = {
+LOGGING: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {

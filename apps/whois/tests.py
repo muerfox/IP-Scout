@@ -49,6 +49,8 @@ class WhoisServiceTests(unittest.TestCase):
     """Real subprocess execution against a fake `whois` script written at
     test time - no network, no real registry, no DB."""
 
+    fake_whois: Path
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()

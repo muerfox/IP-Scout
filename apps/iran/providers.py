@@ -124,12 +124,12 @@ class RipeNccDelegatedStatsProvider(IranCIDRProvider):
                     count = int(value)
                     start_ip = ipaddress.IPv4Address(start)
                     end_ip = ipaddress.IPv4Address(int(start_ip) + count - 1)
-                    for network in ipaddress.summarize_address_range(start_ip, end_ip):
-                        entries.append(CIDREntry(cidr=str(network)))
+                    for ipv4_network in ipaddress.summarize_address_range(start_ip, end_ip):
+                        entries.append(CIDREntry(cidr=str(ipv4_network)))
                 else:
                     prefix_length = int(value)
-                    network = ipaddress.IPv6Network(f"{start}/{prefix_length}", strict=False)
-                    entries.append(CIDREntry(cidr=str(network)))
+                    ipv6_network = ipaddress.IPv6Network(f"{start}/{prefix_length}", strict=False)
+                    entries.append(CIDREntry(cidr=str(ipv6_network)))
             except (ValueError, ipaddress.AddressValueError):
                 # A malformed line shouldn't take down the whole fetch -
                 # skip it and keep going.
