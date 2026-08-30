@@ -85,8 +85,4 @@ jobs:
         run: ruff check .
 
       - name: mypy
-        # Informational only: pre-existing type debt (untyped third-party
-        # stubs, a couple of real narrowing gaps) isn't cleaned up yet, and
-        # mypy 1.10 crashes internally on one file under django-stubs 6.x.
-        # Surface it without blocking merges until that's sorted out.
-        run: mypy . || true
+        run: mypy .
