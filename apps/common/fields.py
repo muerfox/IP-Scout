@@ -56,6 +56,14 @@ class CIDRField(models.Field):
     description = "PostgreSQL cidr (IPv4/IPv6 network address)"
     empty_strings_allowed = False
 
+    def get_internal_type(self):
+        # Python-side values are always plain strings (see class docstring);
+        # telling Django/DRF/drf-spectacular this behaves like a CharField
+        # lets ModelSerializer and the OpenAPI schema generator introspect
+        # it correctly instead of falling back to an unresolved-field
+        # warning for every serializer that includes a CIDRField.
+        return "CharField"
+
     def db_type(self, connection):
         return "cidr"
 
