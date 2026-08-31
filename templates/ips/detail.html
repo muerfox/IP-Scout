@@ -50,7 +50,7 @@
       <thead><tr><th>Queried</th><th>Server</th><th>Hash</th></tr></thead>
       <tbody>
         {% for record in whois_records %}
-          <tr><td>{{ record.queried_at }}</td><td>{{ record.whois_server|default:"—" }}</td><td class="mono">{{ record.response_hash|slice:":12" }}</td></tr>
+          <tr><td><a href="{% url 'whois:detail' record.pk %}">{{ record.queried_at }}</a></td><td>{{ record.whois_server|default:"—" }}</td><td class="mono">{{ record.response_hash|slice:":12" }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

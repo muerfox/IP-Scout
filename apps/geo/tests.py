@@ -1,3 +1,4 @@
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -45,11 +46,51 @@ class MaxMindGeoIPProviderTests(unittest.TestCase):
             MaxMindGeoIPProvider(database_path="")
 
     def test_lookup_without_geoip2_installed_raises_improperly_configured(self):
-        # geoip2 genuinely isn't installed in this sandbox - this exercises
-        # the real guard, not a simulated one.
+        # Force the provider's `import geoip2.database` to fail regardless
+        # of whether the package is actually installed in this environment
+        # (requirements/base.txt declares it, so a real deployment - and
+        # now this sandbox too - normally has it) - a real absent-package
+        # guard, exercised deterministically rather than by relying on
+        # ambient environment state.
         provider = MaxMindGeoIPProvider(database_path="/tmp/does-not-matter.mmdb")
-        with self.assertRaises(ImproperlyConfigured):
-            provider.lookup("1.2.3.4")
+        with patch.dict(sys.modules, {"geoip2.database": None}):
+            with self.assertRaises(ImproperlyConfigured):
+                provider.lookup("1.2.3.4")
+
+    def test_lookup_returns_geo_result_on_success(self):
+        import geoip2.database
+
+        provider = MaxMindGeoIPProvider(database_path="/tmp/does-not-matter.mmdb")
+        mock_response = Mock()
+        mock_response.country.iso_code = "IR"
+        mock_response.country.name = "Iran"
+        mock_response.continent.code = "AS"
+        mock_response.location.latitude = 35.7239
+        mock_response.location.longitude = 51.4329
+        mock_reader = Mock()
+        mock_reader.city.return_value = mock_response
+
+        with patch.object(geoip2.database, "Reader", return_value=mock_reader):
+            result = provider.lookup("2.57.3.1")
+
+        self.assertEqual(
+            result,
+            GeoResult(
+                country_code="IR", country_name="Iran", continent="AS", latitude=35.7239, longitude=51.4329
+            ),
+        )
+        mock_reader.city.assert_called_once_with("2.57.3.1")
+
+    def test_lookup_returns_none_when_address_not_found(self):
+        import geoip2.database
+        import geoip2.errors
+
+        provider = MaxMindGeoIPProvider(database_path="/tmp/does-not-matter.mmdb")
+        mock_reader = Mock()
+        mock_reader.city.side_effect = geoip2.errors.AddressNotFoundError("not found")
+
+        with patch.object(geoip2.database, "Reader", return_value=mock_reader):
+            self.assertIsNone(provider.lookup("9.9.9.9"))
 
 
 class GeoIPServiceTests(TestCase):
@@ -104,6 +145,7 @@ class EnrichIpTaskTests(TestCase):
     @patch("apps.geo.tasks.redis_lock")
     def test_lock_held_is_skipped_silently(self, mock_lock):
         from apps.common.locks import LockHeldError
+
         from .tasks import enrich_ip
 
         mock_lock.side_effect = LockHeldError(f"geo:{self.ip.address}")

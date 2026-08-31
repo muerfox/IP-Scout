@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}WHOIS — IP Scout{% endblock %}
+{% block topbar_title %}WHOIS{% endblock %}
+
+{% block content %}
+  <h1>WHOIS <span class="subtitle">{{ page_obj.paginator.count }} lookups on record</span></h1>
+
+  <form method="get" class="search-bar">
+    <input type="text" name="ip" value="{{ ip_query }}" placeholder="Filter by IP address…">
+    <button type="submit" class="btn btn-sm">Search</button>
+  </form>
+
+  {% if page_obj.object_list %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Address</th>
+          <th>Queried</th>
+          <th>WHOIS server</th>
+          <th>Hash</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in page_obj.object_list %}
+          <tr>
+            <td class="mono"><a href="{% url 'ips:detail' record.ip_id %}">{{ record.ip.address }}</a></td>
+            <td><a href="{% url 'whois:detail' record.pk %}">{{ record.queried_at }}</a></td>
+            <td>{{ record.whois_server|default:"—" }}</td>
+            <td class="mono">{{ record.response_hash|slice:":12" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?ip={{ ip_query }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?ip={{ ip_query }}&page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      {% if ip_query %}No WHOIS lookups match “{{ ip_query }}”.{% else %}No WHOIS lookups yet.{% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

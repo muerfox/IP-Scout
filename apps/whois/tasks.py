@@ -14,7 +14,6 @@ import re
 from datetime import timedelta
 
 from celery import shared_task
-
 from django.conf import settings
 from django.utils import timezone
 
@@ -146,7 +145,9 @@ def purge_old_whois_records() -> int:
     if count:
         queryset.delete()
     logger.info(
-        "purge_old_whois_records: deleted %d record(s) older than %d days", count, settings.WHOIS_RETENTION_DAYS
+        "purge_old_whois_records: deleted %d record(s) older than %d days",
+        count,
+        settings.WHOIS_RETENTION_DAYS,
     )
     return count
 

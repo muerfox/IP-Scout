@@ -24,7 +24,9 @@ class DashboardDataView(APIView):
 
     def get(self, request):
         period = request.query_params.get("period", "24h")
-        start, end = resolve_period(period, request.query_params.get("start"), request.query_params.get("end"))
+        start, end = resolve_period(
+            period, request.query_params.get("start"), request.query_params.get("end")
+        )
         series = DashboardAnalyticsService.build(start, end)
         return Response(
             {"period": period, "start": start.isoformat(), "end": end.isoformat(), **asdict(series)}
@@ -40,7 +42,9 @@ class MapDataView(APIView):
             status = "503"
 
         period = request.query_params.get("period", "24h")
-        start, end = resolve_period(period, request.query_params.get("start"), request.query_params.get("end"))
+        start, end = resolve_period(
+            period, request.query_params.get("start"), request.query_params.get("end")
+        )
 
         try:
             zoom = int(request.query_params.get("zoom", 2))
@@ -63,6 +67,19 @@ class IranExportAPIView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+
+    def perform_content_negotiation(self, request, force=False):
+        # This view always returns a raw HttpResponse (see _export_txt/
+        # _export_csv/_export_json) and never a DRF Response, so DRF's
+        # renderer machinery is never used - but `initial()` still runs
+        # content negotiation unconditionally before get() executes, and
+        # DRF's default negotiator treats the `?format=` query param as
+        # its own renderer-selection convention (format=json works only
+        # by accident; format=txt/csv 404 before get() is ever reached,
+        # since neither is a registered renderer format). Bypass it: this
+        # view's own `?format=` (spec section 40) is unrelated to DRF's.
+        renderer = self.renderer_classes[0]()
+        return renderer, renderer.media_type
 
     def get(self, request):
         fmt = request.query_params.get("format", "txt")

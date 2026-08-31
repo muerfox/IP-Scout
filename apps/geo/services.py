@@ -23,5 +23,7 @@ class GeoIPService:
         ip.continent = result.continent
         ip.latitude = result.latitude
         ip.longitude = result.longitude
-        ip.save(update_fields=["country_code", "country_name", "continent", "latitude", "longitude", "updated_at"])
+        ip.save(
+            update_fields=["country_code", "country_name", "continent", "latitude", "longitude", "updated_at"]
+        )
         return ip

@@ -46,7 +46,7 @@ class IranCIDRService:
                 # Close out whatever period was open (a no-op if the IP
                 # was never Iranian - the filter simply matches nothing).
                 IPCountryHistory.objects.filter(ip=ip, valid_until__isnull=True).update(valid_until=now)
-                if new_is_iran:
+                if match is not None:
                     IPCountryHistory.objects.create(
                         ip=ip,
                         country_code=IRAN_COUNTRY_CODE,
@@ -80,6 +80,7 @@ class IranCIDRValidationService:
         newly *added* CIDR only matters for IPs not yet classified, which
         pick it up the next time they're sighted via classify())."""
         provider = provider or get_provider()
+        source = provider.SOURCE
         entries = provider.fetch()
         now = timezone.now()
 
@@ -92,7 +93,7 @@ class IranCIDRValidationService:
                 cidr=entry.cidr,
                 defaults={
                     "network": entry.network,
-                    "source": "manual",
+                    "source": source,
                     "enabled": True,
                     "last_verified_at": now,
                 },
@@ -100,8 +101,12 @@ class IranCIDRValidationService:
             if was_created:
                 created += 1
 
+        # Scoped to this provider's own SOURCE, not "manual" generally -
+        # a validation run must never disable another provider's entries
+        # just because they weren't in *this* fetch (see IranCIDRProvider
+        # docstring).
         removed_qs = CountryNetwork.objects.filter(
-            country_code=IRAN_COUNTRY_CODE, source="manual", enabled=True
+            country_code=IRAN_COUNTRY_CODE, source=source, enabled=True
         ).exclude(cidr__in=fetched_cidrs)
         disabled = removed_qs.update(enabled=False, last_verified_at=now)
 

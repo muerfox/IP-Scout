@@ -6,10 +6,11 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.locks import LockHeldError
 from apps.incidents.models import RequestEvent
 from apps.ips.models import IPAddress
 from apps.servers.models import Server
-from apps.servers.services import LogChunk
+from apps.servers.services import LogChunk, SSHConnectionError
 
 from .models import LogSource
 from .services import NginxLogReader
@@ -72,6 +73,31 @@ class LogSourceViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Monitoring")
 
+    def test_readers_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("logs:readers"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_readers_shows_incremental_state(self):
+        self.log_source.inode = 12345
+        self.log_source.byte_offset = 9876
+        self.log_source.save()
+        response = self.client.get(reverse("logs:readers"))
+        self.assertContains(response, "12345")
+        self.assertContains(response, "9876")
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_poll_now_queues_task_and_redirects(self, mock_delay):
+        response = self.client.post(reverse("logs:poll-now", args=[self.log_source.pk]))
+        mock_delay.assert_called_once_with(self.log_source.id)
+        self.assertRedirects(response, reverse("logs:readers"))
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_poll_now_requires_post(self, mock_delay):
+        response = self.client.get(reverse("logs:poll-now", args=[self.log_source.pk]))
+        self.assertEqual(response.status_code, 405)
+        mock_delay.assert_not_called()
+
 
 class DiscoverServerLogsTaskTests(TestCase):
     def setUp(self):
@@ -119,6 +145,36 @@ class DiscoverServerLogsTaskTests(TestCase):
         self.assertEqual(LogSource.objects.filter(server=self.server).count(), 1)
         existing.refresh_from_db()
         self.assertTrue(existing.enabled)  # discovery must not clobber an already-enabled source
+
+    def test_missing_server_returns_silently(self):
+        from apps.servers.tasks import discover_server_logs
+
+        discover_server_logs(999999)  # must not raise
+
+    @patch("apps.servers.tasks.SSHService")
+    def test_ssh_connection_error_sets_last_error_and_records_failure(self, mock_service_cls):
+        from apps.servers.tasks import discover_server_logs
+        from apps.users.models import AuditLogEntry
+
+        mock_service_cls.return_value.discover_logs.side_effect = SSHConnectionError("auth failed")
+
+        discover_server_logs(self.server.id)
+
+        self.server.refresh_from_db()
+        self.assertEqual(self.server.last_error, "auth failed")
+        self.assertEqual(LogSource.objects.filter(server=self.server).count(), 0)
+
+        entry = AuditLogEntry.objects.get(action="server.discover_logs")
+        self.assertEqual(entry.result, AuditLogEntry.Result.FAILURE)
+        self.assertEqual(entry.metadata["error"], "auth failed")
+
+    @patch("apps.servers.tasks.redis_lock")
+    def test_lock_held_is_skipped_silently(self, mock_lock):
+        from apps.servers.tasks import discover_server_logs
+
+        mock_lock.side_effect = LockHeldError(f"ssh:discover:{self.server.id}")
+        discover_server_logs(self.server.id)  # must not raise
+        self.assertEqual(LogSource.objects.filter(server=self.server).count(), 0)
 
 
 class NginxLogReaderTests(TestCase):
@@ -264,3 +320,70 @@ class PollLogSourceTaskTests(TestCase):
 
         poll_log_source(self.log_source.id)  # must not raise
         mock_reader_cls.assert_not_called()
+
+    def test_missing_log_source_returns_silently(self):
+        from .tasks import poll_log_source
+
+        poll_log_source(999999)  # must not raise
+
+    @patch("apps.logs.tasks.NginxLogReader")
+    def test_polls_and_logs_rotation(self, mock_reader_cls):
+        from .services import PollSummary
+        from .tasks import poll_log_source
+
+        mock_reader_cls.return_value.poll.return_value = PollSummary(
+            events_created=0, parse_errors=0, lines_read=0, rotated=True
+        )
+
+        poll_log_source(self.log_source.id)  # must not raise; exercises the rotated-log branch
+
+    @patch("apps.logs.tasks.NginxLogReader")
+    def test_polls_and_logs_events_created(self, mock_reader_cls):
+        from .services import PollSummary
+        from .tasks import poll_log_source
+
+        mock_reader_cls.return_value.poll.return_value = PollSummary(
+            events_created=5, parse_errors=0, lines_read=10, rotated=False
+        )
+
+        poll_log_source(self.log_source.id)  # must not raise; exercises the events-created branch
+
+
+class PollAllLogSourcesTaskTests(TestCase):
+    def setUp(self):
+        self.server = Server.objects.create(
+            name="edge-fanout",
+            hostname="edge-fanout.example.com",
+            ssh_username="deploy",
+            ssh_auth_type=Server.AuthType.PASSWORD,
+            ssh_private_key="pw",
+        )
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_dispatches_one_task_per_enabled_source(self, mock_delay):
+        from .tasks import poll_all_log_sources
+
+        enabled = LogSource.objects.create(
+            server=self.server, name="access.log", path="/var/log/nginx/access.log", enabled=True
+        )
+        LogSource.objects.create(
+            server=self.server, name="disabled.log", path="/var/log/nginx/disabled.log", enabled=False
+        )
+
+        poll_all_log_sources()
+
+        mock_delay.assert_called_once_with(enabled.id)
+
+    @patch("apps.logs.tasks.poll_log_source.delay")
+    def test_skips_sources_on_disabled_server(self, mock_delay):
+        from .tasks import poll_all_log_sources
+
+        self.server.enabled = False
+        self.server.save()
+        LogSource.objects.create(
+            server=self.server, name="access.log", path="/var/log/nginx/access.log", enabled=True
+        )
+
+        poll_all_log_sources()
+
+        mock_delay.assert_not_called()

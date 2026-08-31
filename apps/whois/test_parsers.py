@@ -69,7 +69,8 @@ class ExtractKnownFieldsTests(unittest.TestCase):
 
     def test_arin_style_fields(self):
         parsed = parse_generic(
-            "NetRange: 1.2.3.0 - 1.2.3.255\nOrgName: Acme Corp\nCountry: US\nOrgAbuseEmail: abuse@acme.example\n"
+            "NetRange: 1.2.3.0 - 1.2.3.255\nOrgName: Acme Corp\n"
+            "Country: US\nOrgAbuseEmail: abuse@acme.example\n"
         )
         known = extract_known_fields(parsed)
         self.assertEqual(known["inetnum"], "1.2.3.0 - 1.2.3.255")

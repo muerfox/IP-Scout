@@ -6,6 +6,8 @@ app_name = "ips"
 
 urlpatterns = [
     path("", views.ip_list, name="list"),
+    path("countries/", views.country_list, name="countries"),
+    path("asns/", views.asn_list, name="asns"),
     path("<int:pk>/", views.ip_detail, name="detail"),
     path("<int:pk>/whois-status/", views.whois_status_cell, name="whois-status-cell"),
     path("<int:pk>/force-whois/", views.force_whois, name="force-whois"),

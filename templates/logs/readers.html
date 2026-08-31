@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Readers — IP Scout{% endblock %}
+{% block topbar_title %}Readers{% endblock %}
+
+{% block content %}
+  <h1>Readers <span class="subtitle">incremental-read state per log source</span></h1>
+
+  {% if log_sources %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Server</th>
+          <th>Path</th>
+          <th>Status</th>
+          <th>Inode</th>
+          <th class="num">Offset (bytes)</th>
+          <th>Last read</th>
+          <th>Last event</th>
+          <th>Last error</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log_source in log_sources %}
+          <tr>
+            <td><a href="{% url 'servers:detail' log_source.server_id %}">{{ log_source.server.name }}</a></td>
+            <td class="mono">{{ log_source.path }}</td>
+            <td><span class="status-dot {{ log_source.reader_status }}"></span>{{ log_source.reader_status }}</td>
+            <td class="mono">{{ log_source.inode|default:"—" }}</td>
+            <td class="num mono">{{ log_source.byte_offset }}</td>
+            <td>{{ log_source.last_read_at|default:"—" }}</td>
+            <td>{{ log_source.last_event_at|default:"—" }}</td>
+            <td>{% if log_source.last_error %}<span class="badge red">{{ log_source.last_error }}</span>{% else %}—{% endif %}</td>
+            <td>
+              {% if log_source.enabled %}
+                <form method="post" action="{% url 'logs:poll-now' log_source.pk %}">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm">Poll now</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No log sources yet. Add a server and run log discovery from its detail page.</div>
+  {% endif %}
+{% endblock %}

@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import redis as redis_lib
-
 from django.conf import settings
 from django.utils import timezone
 

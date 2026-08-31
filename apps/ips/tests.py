@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -52,7 +52,7 @@ class NeedsWhoisCheckTests(unittest.TestCase):
             self.assertTrue(IPIntelligenceService.needs_whois_check(ip))
 
 
-T0 = datetime(2026, 8, 26, 4, 30, tzinfo=dt_timezone.utc)
+T0 = datetime(2026, 8, 26, 4, 30, tzinfo=UTC)
 
 
 class IPIntelligenceServiceTests(TestCase):
@@ -163,6 +163,7 @@ class ProcessNewIpTaskTests(TestCase):
     @patch("apps.ips.tasks.redis_lock")
     def test_lock_held_is_skipped_silently(self, mock_lock):
         from apps.common.locks import LockHeldError
+
         from .tasks import process_new_ip
 
         mock_lock.side_effect = LockHeldError(f"ip:process:{self.ip.address}")
@@ -206,6 +207,59 @@ class IpListViewTests(TestCase):
         response = self.client.get(reverse("ips:list"), {"is_iran": "true"})
         self.assertContains(response, "1.2.3.4")
         self.assertNotContains(response, "5.6.7.8")
+
+    def test_cidr_filter(self):
+        IPAddress.objects.create(address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0)
+        IPAddress.objects.create(address="9.9.9.9", version=4, first_seen_at=T0, last_seen_at=T0)
+        response = self.client.get(reverse("ips:list"), {"cidr": "1.2.3.0/24"})
+        self.assertContains(response, "1.2.3.4")
+        self.assertNotContains(response, "9.9.9.9")
+
+    def test_asn_filter(self):
+        IPAddress.objects.create(address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0, asn=64500)
+        IPAddress.objects.create(address="9.9.9.9", version=4, first_seen_at=T0, last_seen_at=T0, asn=64501)
+        response = self.client.get(reverse("ips:list"), {"asn": "64500"})
+        self.assertContains(response, "1.2.3.4")
+        self.assertNotContains(response, "9.9.9.9")
+
+    def test_non_numeric_asn_is_ignored(self):
+        IPAddress.objects.create(address="1.2.3.4", version=4, first_seen_at=T0, last_seen_at=T0)
+        response = self.client.get(reverse("ips:list"), {"asn": "not-a-number"})
+        self.assertContains(response, "1.2.3.4")
+
+
+class WhoisStatusCellViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:whois-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_renders_partial(self):
+        response = self.client.get(reverse("ips:whois-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "ips/partials/whois_status.html")
+
+
+class IranStatusCellViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+        self.ip = IPAddress.objects.create(address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:iran-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_renders_partial(self):
+        response = self.client.get(reverse("ips:iran-status-cell", args=[self.ip.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "ips/partials/iran_status.html")
 
 
 class RecalculateIranViewTests(TestCase):
@@ -292,3 +346,71 @@ class IpDetailViewTests(TestCase):
         )
         response = self.client.get(reverse("ips:detail", args=[self.ip.pk]), {"server": other_server.pk})
         self.assertEqual(len(response.context["page_obj"].object_list), 0)
+
+    def test_host_filter(self):
+        response = self.client.get(reverse("ips:detail", args=[self.ip.pk]), {"host": "other.example.com"})
+        self.assertEqual(len(response.context["page_obj"].object_list), 0)
+
+
+class CountryListViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:countries"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_groups_by_country_and_counts_iran(self):
+        IPAddress.objects.create(
+            address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0,
+            country_code="IR", country_name="Iran", is_iran=True,
+        )
+        IPAddress.objects.create(
+            address="5.1.1.2", version=4, first_seen_at=T0, last_seen_at=T0,
+            country_code="IR", country_name="Iran", is_iran=True,
+        )
+        IPAddress.objects.create(
+            address="9.9.9.9", version=4, first_seen_at=T0, last_seen_at=T0,
+            country_code="US", country_name="United States",
+        )
+        # No country resolved yet - must not appear as a blank row.
+        IPAddress.objects.create(address="1.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+        response = self.client.get(reverse("ips:countries"))
+        rows = {row["country_code"]: row for row in response.context["countries"]}
+        self.assertEqual(set(rows), {"IR", "US"})
+        self.assertEqual(rows["IR"]["total"], 2)
+        self.assertEqual(rows["IR"]["iran_count"], 2)
+        self.assertEqual(rows["US"]["total"], 1)
+        self.assertEqual(rows["US"]["iran_count"], 0)
+
+
+class AsnListViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("ips:asns"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_groups_by_asn_despite_organization_text_variance(self):
+        IPAddress.objects.create(
+            address="5.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0,
+            asn=12880, organization="Telecommunication Company of Iran",
+        )
+        IPAddress.objects.create(
+            address="5.1.1.2", version=4, first_seen_at=T0, last_seen_at=T0,
+            asn=12880, organization="Telecommunication Company of Iran PJS",
+        )
+        # No ASN resolved yet - must not appear as a blank row.
+        IPAddress.objects.create(address="1.1.1.1", version=4, first_seen_at=T0, last_seen_at=T0)
+
+        response = self.client.get(reverse("ips:asns"))
+        rows = list(response.context["asns"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["asn"], 12880)
+        self.assertEqual(rows[0]["total"], 2)

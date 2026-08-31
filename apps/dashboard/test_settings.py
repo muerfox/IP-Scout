@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 User = get_user_model()
@@ -32,10 +32,22 @@ class SettingsPagesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "null")
 
+    @override_settings(GEOIP_PROVIDER="unknown-provider")
+    def test_geoip_surfaces_provider_misconfiguration(self):
+        response = self.client.get(reverse("dashboard:settings-geoip"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Unknown GEOIP_PROVIDER")
+
     def test_iran_sources_renders_config(self):
         response = self.client.get(reverse("dashboard:settings-iran-sources"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "static")
+
+    @override_settings(IRAN_CIDR_SOURCE="ripencc")
+    def test_iran_sources_renders_ripencc_note(self):
+        response = self.client.get(reverse("dashboard:settings-iran-sources"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "RIPE NCC")
 
     def test_users_redirects_to_admin(self):
         response = self.client.get(reverse("dashboard:settings-users"))

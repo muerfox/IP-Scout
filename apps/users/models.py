@@ -57,5 +57,5 @@ class AuditLogEntry(TimeStampedModel):
         verbose_name_plural = "Audit log entries"
 
     def __str__(self) -> str:
-        who = self.user.get_username() if self.user_id else "system"
+        who = self.user.get_username() if self.user else "system"
         return f"{who} {self.action} ({self.result})"

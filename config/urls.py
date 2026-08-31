@@ -1,14 +1,15 @@
 from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import URLPattern, URLResolver, include, path
 
-urlpatterns = [
+urlpatterns: list[URLPattern | URLResolver] = [
     path("admin/", admin.site.urls),
     path("", include("apps.dashboard.urls", namespace="dashboard")),
     path("accounts/", include("apps.users.urls", namespace="users")),
     path("servers/", include("apps.servers.urls", namespace="servers")),
     path("logs/", include("apps.logs.urls", namespace="logs")),
     path("ips/", include("apps.ips.urls", namespace="ips")),
+    path("whois/", include("apps.whois.urls", namespace="whois")),
     path("iran/", include("apps.iran.urls", namespace="iran")),
     path("incidents/", include("apps.incidents.urls", namespace="incidents")),
     path("api/v1/", include("apps.api.urls", namespace="api")),

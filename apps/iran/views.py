@@ -1,6 +1,7 @@
 import csv
 import json
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -42,7 +43,11 @@ def cidr_list(request):
     queryset = CountryNetwork.objects.all()
     paginator = Paginator(queryset, 50)
     page_obj = paginator.get_page(request.GET.get("page"))
-    return render(request, "iran/cidrs.html", {"page_obj": page_obj})
+    return render(
+        request,
+        "iran/cidrs.html",
+        {"page_obj": page_obj, "iran_cidr_source": settings.IRAN_CIDR_SOURCE},
+    )
 
 
 @login_required

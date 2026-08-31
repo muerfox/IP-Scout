@@ -90,12 +90,13 @@ class DashboardAnalyticsService:
         ip_ids = events.values_list("ip_id", flat=True).distinct()
         ips_in_period = IPAddress.objects.filter(id__in=ip_ids)
 
-        countries = list(
-            ips_in_period.exclude(country_code="")
+        countries = [
+            dict(row)
+            for row in ips_in_period.exclude(country_code="")
             .values("country_code")
             .annotate(count=Count("id"))
             .order_by("-count")
-        )
+        ]
 
         iran_split = {
             "iran": ips_in_period.filter(is_iran=True).count(),
@@ -118,7 +119,9 @@ class DashboardAnalyticsService:
         )
 
         return DashboardSeries(
-            requests_over_time=[{"bucket": r["bucket"].isoformat(), "count": r["count"]} for r in requests_over_time],
+            requests_over_time=[
+                {"bucket": r["bucket"].isoformat(), "count": r["count"]} for r in requests_over_time
+            ],
             unique_ips_over_time=[
                 {"bucket": r["bucket"].isoformat(), "count": r["count"]} for r in unique_ips_over_time
             ],

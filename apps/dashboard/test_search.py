@@ -40,6 +40,10 @@ class ResolveSearchTests(TestCase):
     def test_cidr_goes_to_filtered_list(self):
         self.assertEqual(resolve_search("5.1.0.0/22"), f"{reverse('ips:list')}?cidr=5.1.0.0/22")
 
+    def test_slash_present_but_invalid_cidr_falls_through(self):
+        query = "not-a-cidr/thing"
+        self.assertEqual(resolve_search(query), f"{reverse('ips:list')}?q={query}")
+
     def test_asn_goes_to_filtered_list(self):
         self.assertEqual(resolve_search("12880"), f"{reverse('ips:list')}?asn=12880")
 

@@ -1,7 +1,7 @@
 import unittest
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -32,9 +32,13 @@ class QueueTaskGroupsTests(unittest.TestCase):
 
 
 class RedisQueueLengthTests(unittest.TestCase):
+    @override_settings(REDIS_URL="redis://127.0.0.1:1/0")
     def test_unreachable_redis_returns_none_and_error_not_an_exception(self):
-        # No Redis is running in this sandbox - this exercises the real
-        # failure path, not a simulated one.
+        # Point at a port nothing listens on rather than relying on the
+        # environment having no Redis at all - a dev/CI box with a real
+        # Redis instance (this sandbox now has one) would otherwise make
+        # this test pass or fail depending on ambient state instead of
+        # the real failure path it's meant to exercise.
         length, error = _redis_queue_length("logs")
         self.assertIsNone(length)
         self.assertTrue(error)

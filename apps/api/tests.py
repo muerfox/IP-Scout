@@ -79,3 +79,7 @@ class MapDataViewTests(TestCase):
         self.assertEqual(len(points), 1)
         self.assertNotIn("address", points[0])
         self.assertEqual(points[0]["count"], 1)
+
+    def test_non_numeric_zoom_falls_back_to_two(self):
+        response = self.client.get(reverse("api:map"), {"zoom": "not-a-number"})
+        self.assertEqual(response.json()["zoom"], 2)

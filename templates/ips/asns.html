@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}ASNs — IP Scout{% endblock %}
+{% block topbar_title %}ASNs{% endblock %}
+
+{% block content %}
+  <h1>ASNs <span class="subtitle">WHOIS breakdown across all known IPs</span></h1>
+
+  {% if asns %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>ASN</th>
+          <th>Organization</th>
+          <th class="num">IPs</th>
+          <th class="num">Iranian</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in asns %}
+          <tr>
+            <td class="mono">AS{{ row.asn }}</td>
+            <td>{{ row.organization|default:"—" }}</td>
+            <td class="num"><a href="{% url 'ips:list' %}?asn={{ row.asn }}">{{ row.total }}</a></td>
+            <td class="num">{{ row.iran_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      No ASN data yet — no IP has completed a WHOIS lookup. See Settings → WHOIS.
+    </div>
+  {% endif %}
+{% endblock %}

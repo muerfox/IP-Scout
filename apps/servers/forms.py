@@ -6,7 +6,9 @@ from .models import Server
 class ServerForm(forms.ModelForm):
     ssh_private_key = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={"rows": 6, "placeholder": "Leave blank to keep the existing credential"}),
+        widget=forms.Textarea(
+            attrs={"rows": 6, "placeholder": "Leave blank to keep the existing credential"}
+        ),
         help_text="SSH private key (PEM) or password, depending on auth type below. Stored encrypted.",
     )
     log_search_paths_text = forms.CharField(

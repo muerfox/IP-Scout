@@ -117,8 +117,8 @@ class IPIntelligenceService:
             from .tasks import process_new_ip
 
             for address in newly_seen_addresses:
-                ip_obj = existing.get(address)
-                if ip_obj is not None:
-                    process_new_ip.delay(ip_obj.id)
+                new_ip_obj = existing.get(address)
+                if new_ip_obj is not None:
+                    process_new_ip.delay(new_ip_obj.id)
 
         return existing

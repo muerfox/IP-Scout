@@ -2,15 +2,17 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import paramiko
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.locks import LockHeldError
+from apps.users.models import AuditLogEntry
+
 from .forms import ServerForm
 from .models import Server
-from .services import SSHConnectionError, SSHService
+from .services import DEFAULT_LOG_DIR, ConnectionTestResult, SSHConnectionError, SSHService
 
 User = get_user_model()
 
@@ -136,6 +138,51 @@ class SSHServiceTests(unittest.TestCase):
 
         self.assertEqual([f.path for f in files], ["/var/log/nginx/access.log"])
         sftp.close.assert_called_once()
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_discover_logs_dedupes_across_directories(self, mock_client_cls):
+        """A path reachable through two configured directories (e.g. an
+        extra path duplicating the default one) is only reported once."""
+        client = MagicMock()
+        client.__enter__.return_value = client
+        sftp = MagicMock()
+        client.open_sftp.return_value = sftp
+
+        file_entry = MagicMock(filename="access.log", st_size=1024, st_mtime=1_700_000_000)
+        file_entry.st_mode = 0o100644  # regular file
+        sftp.listdir_attr.return_value = [file_entry]
+        mock_client_cls.return_value = client
+
+        server = make_server(ssh_auth_type=Server.AuthType.SSH_KEY, ssh_private_key="")
+        with patch.object(SSHService, "_load_private_key", return_value=MagicMock()):
+            files = SSHService(server).discover_logs(extra_paths=[DEFAULT_LOG_DIR])
+
+        self.assertEqual([f.path for f in files], ["/var/log/nginx/access.log"])
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_discover_logs_survives_missing_directory(self, mock_client_cls):
+        client = MagicMock()
+        client.__enter__.return_value = client
+        sftp = MagicMock()
+        sftp.listdir_attr.side_effect = FileNotFoundError
+        client.open_sftp.return_value = sftp
+        mock_client_cls.return_value = client
+
+        server = make_server(ssh_auth_type=Server.AuthType.SSH_KEY, ssh_private_key="")
+        with patch.object(SSHService, "_load_private_key", return_value=MagicMock()):
+            files = SSHService(server).discover_logs()
+
+        self.assertEqual(files, [])
+
+    def test_connect_kwargs_error_propagates_through_client(self):
+        """_connect_kwargs() raising SSHConnectionError (e.g. no password
+        configured) is re-raised as-is by _client(), not wrapped again."""
+        server = make_server(ssh_auth_type=Server.AuthType.PASSWORD, ssh_private_key="")
+
+        result = SSHService(server).test_connection()
+
+        self.assertFalse(result.success)
+        self.assertIn("No SSH password configured", result.error)
 
     def test_load_private_key_empty_raises(self):
         with self.assertRaises(SSHConnectionError):
@@ -353,3 +400,151 @@ class ServerViewTests(TestCase):
         server.save()
         self.client.post(reverse("servers:test-connection", args=[server.pk]))
         mock_task.delay.assert_called_once_with(server.id, user_id=self.user.id)
+
+    @patch("apps.servers.views.test_server_connection")
+    def test_test_connection_htmx_returns_status_badge_partial(self, mock_task):
+        server = make_server(name="edge-8b")
+        server.save()
+        response = self.client.post(
+            reverse("servers:test-connection", args=[server.pk]), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/partials/status_badge.html")
+
+    @patch("apps.servers.views.discover_server_logs")
+    def test_discover_logs_enqueues_task(self, mock_task):
+        server = make_server(name="edge-9")
+        server.save()
+        response = self.client.post(reverse("servers:discover-logs", args=[server.pk]))
+        mock_task.delay.assert_called_once_with(server.id, user_id=self.user.id)
+        self.assertRedirects(response, reverse("servers:detail", args=[server.pk]))
+
+    def test_create_get_renders_blank_form(self):
+        response = self.client.get(reverse("servers:create"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/form.html")
+        self.assertTrue(response.context["is_new"])
+
+    def test_update_get_renders_populated_form(self):
+        server = make_server(name="edge-10")
+        server.save()
+        response = self.client.get(reverse("servers:update", args=[server.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["is_new"])
+        self.assertEqual(response.context["server"], server)
+
+    def test_update_post_saves_changes(self):
+        server = make_server(name="edge-11")
+        server.save()
+        response = self.client.post(
+            reverse("servers:update", args=[server.pk]),
+            {
+                "name": "edge-11-renamed",
+                "hostname": server.hostname,
+                "ip_address": "",
+                "ssh_port": server.ssh_port,
+                "ssh_username": server.ssh_username,
+                "ssh_auth_type": server.ssh_auth_type,
+                "enabled": True,
+                "ssh_private_key": "-----BEGIN KEY-----\nabc\n-----END KEY-----",
+                "log_search_paths_text": "",
+            },
+        )
+        server.refresh_from_db()
+        self.assertEqual(server.name, "edge-11-renamed")
+        self.assertRedirects(response, reverse("servers:detail", args=[server.pk]))
+
+    def test_status_badge_renders_partial(self):
+        server = make_server(name="edge-12")
+        server.save()
+        response = self.client.get(reverse("servers:status-badge", args=[server.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/partials/status_badge.html")
+
+    def test_toggle_enabled_htmx_returns_status_badge_partial(self):
+        server = make_server(name="edge-13")
+        server.save()
+        response = self.client.post(
+            reverse("servers:toggle-enabled", args=[server.pk]), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "servers/partials/status_badge.html")
+
+
+class TestServerConnectionTaskTests(TestCase):
+    """`apps.servers.tasks.test_server_connection` - the Celery task behind
+    the "Test Connection" button. SSHService is mocked at the boundary
+    (real SSH behavior is covered separately, see
+    apps.servers.tests.SSHServiceTests and this project's manual
+    rootless-sshd verification, see README); this class covers the
+    task's own DB/audit-log/locking logic, previously untested."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="operator", password="s3cur3-pass-1234")
+        self.server = make_server(name="edge-conn")
+        self.server.save()
+
+    def test_missing_server_returns_silently(self):
+        from .tasks import test_server_connection
+
+        test_server_connection(999999)  # must not raise
+
+    @patch("apps.servers.tasks.SSHService")
+    def test_success_updates_server_and_records_audit_log(self, mock_service_cls):
+        from .tasks import test_server_connection
+
+        mock_service_cls.return_value.test_connection.return_value = ConnectionTestResult(
+            success=True, os_name="Linux", nginx_found=True, nginx_version="1.18.0"
+        )
+
+        test_server_connection(self.server.id, user_id=self.user.id)
+
+        self.server.refresh_from_db()
+        self.assertEqual(self.server.last_error, "")
+        self.assertIsNotNone(self.server.last_connected_at)
+
+        entry = AuditLogEntry.objects.get(action="server.test_connection")
+        self.assertEqual(entry.result, AuditLogEntry.Result.SUCCESS)
+        self.assertEqual(entry.user_id, self.user.id)
+        self.assertEqual(entry.metadata["os_name"], "Linux")
+        self.assertTrue(entry.metadata["nginx_found"])
+
+    @patch("apps.servers.tasks.SSHService")
+    def test_failure_sets_last_error_and_records_audit_log(self, mock_service_cls):
+        from .tasks import test_server_connection
+
+        mock_service_cls.return_value.test_connection.return_value = ConnectionTestResult(
+            success=False, error="Connection refused"
+        )
+
+        test_server_connection(self.server.id)
+
+        self.server.refresh_from_db()
+        self.assertEqual(self.server.last_error, "Connection refused")
+
+        entry = AuditLogEntry.objects.get(action="server.test_connection")
+        self.assertEqual(entry.result, AuditLogEntry.Result.FAILURE)
+        self.assertIsNone(entry.user_id)
+
+    @patch("apps.servers.tasks.SSHService")
+    def test_failure_without_error_message_falls_back_to_generic_text(self, mock_service_cls):
+        from .tasks import test_server_connection
+
+        mock_service_cls.return_value.test_connection.return_value = ConnectionTestResult(
+            success=False, error=None
+        )
+
+        test_server_connection(self.server.id)
+
+        self.server.refresh_from_db()
+        self.assertEqual(self.server.last_error, "Unknown SSH error")
+
+    @patch("apps.servers.tasks.redis_lock")
+    def test_lock_held_is_skipped_silently(self, mock_lock):
+        from .tasks import test_server_connection
+
+        mock_lock.side_effect = LockHeldError(f"ssh:test:{self.server.id}")
+        test_server_connection(self.server.id)  # must not raise
+        self.server.refresh_from_db()
+        self.assertEqual(self.server.last_error, "")  # untouched - task returned before doing anything
+        self.assertFalse(AuditLogEntry.objects.filter(action="server.test_connection").exists())

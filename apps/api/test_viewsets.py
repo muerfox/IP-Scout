@@ -174,6 +174,11 @@ class RequestEventApiTests(ApiTestBase):
         response = self.client.get("/api/v1/503/", {"days": "7"})
         self.assertEqual(response.json()["count"], 2)
 
+    def test_non_numeric_days_query_param_is_ignored(self):
+        response = self.client.get("/api/v1/503/", {"days": "not-a-number"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 2)
+
 
 class IranApiTests(ApiTestBase):
     def test_iran_ips_endpoint(self):
@@ -206,6 +211,28 @@ class IranApiTests(ApiTestBase):
         self.client.logout()
         response = self.client.get("/api/v1/iran/export/")
         self.assertIn(response.status_code, (401, 403))
+
+    def test_iran_export_csv(self):
+        now = timezone.now()
+        IPAddress.objects.create(
+            address="5.1.1.1", version=4, first_seen_at=now, last_seen_at=now, is_iran=True
+        )
+        response = self.client.get(
+            "/api/v1/iran/export/", {"format": "csv", "status_503_only": "false"}
+        )
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("5.1.1.1", response.content.decode())
+
+    def test_iran_export_json(self):
+        now = timezone.now()
+        IPAddress.objects.create(
+            address="5.1.1.1", version=4, first_seen_at=now, last_seen_at=now, is_iran=True
+        )
+        response = self.client.get(
+            "/api/v1/iran/export/", {"format": "json", "status_503_only": "false"}
+        )
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertIn("5.1.1.1", response.content.decode())
 
 
 class WorkersApiTests(ApiTestBase):

@@ -16,22 +16,225 @@ Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (`inet`/`cidr`
 types), Redis, Celery + Celery Beat, Gunicorn, Nginx, Django templates +
 HTMX, Leaflet.js, Chart.js, the Linux `whois` binary.
 
-## Status: Phase 10 — full REST API + global search
+## Status: Phase 10 — full REST API + global search, verified end-to-end
 
 All nine phases of the original roadmap are implemented, plus the
 tracked gap from Phase 9: the full REST API (spec section 39), its
 example queries (section 40), and global search (section 41) - the last
 three pieces of the spec with no code behind them at all.
 
-Nothing in the UI or API returns fabricated data — unbuilt nav entries
-are disabled rather than linking to pages that don't exist. **No
-geolocation dataset or Iran CIDR data ships with this project** - this
-sandbox has no network access and no way to verify such data, and
-inventing it for security/geo-classification features would be exactly
-the kind of fake data the project rules warn against. `GEOIP_PROVIDER`
-defaults to `null`; `CountryNetwork` starts empty (see Phases 6/8). Both
-are real, pluggable, and ready for a deployment that adds a trusted
-source - see Settings → GeoIP / Iran CIDR Sources for current status.
+Every phase up to this point had only ever been checked with
+`manage.py check` and a DB-free test subset - real PostgreSQL/Redis/
+whois were never available. This build now has: `migrate` run for
+real against PostgreSQL 15 (all migrations across all ten phases,
+including the custom `inet`/`cidr` fields and their lookups, applied
+cleanly); the full test suite (292 tests) run for real, not skipped;
+and a live `runserver` smoke test - session login, JWT issuance, an
+authenticated API call, and a rendered dashboard page - all against
+that same real Postgres/Redis. Three real bugs only reachable this way
+were found and fixed:
+
+- `IranExportAPIView`'s `?format=txt|csv` (spec section 40) 404'd
+  before `get()` ever ran, because DRF's default content negotiation
+  treats `?format=` as its own renderer-selection query param and had
+  no `txt`/`csv` renderer registered - only `?format=json` worked by
+  accident. Fixed by overriding `perform_content_negotiation` to skip
+  DRF's renderer selection entirely, since this view only ever returns
+  a raw `HttpResponse` it builds itself.
+- `AuditLogMiddleware` set the per-request `contextvars.ContextVar`
+  used to attribute audit log entries to the acting user, but never
+  reset it. Django's synchronous request handling reuses the same OS
+  thread (and `Context`) across requests, so on a real multi-request
+  process the value leaked into whatever ran next on that thread -
+  visible once the test suite ran against a real threaded DB backend
+  instead of being skipped. Fixed with a `contextvars.Token` returned
+  from `set_context()` and reset in a `finally` block.
+- A worker-monitoring test asserted Redis-unreachable behavior by
+  relying on the sandbox simply having no Redis at all - true until
+  now. Fixed to point at a definitely-closed port via
+  `override_settings` instead, so the test is deterministic regardless
+  of what's actually running.
+
+With real infrastructure available, the four remaining disabled nav
+placeholders (Logs → Readers, IP Intelligence → Countries/ASNs/WHOIS)
+were closed out too - the last gaps between the nav tree and actual
+pages:
+
+- **Countries** / **ASNs** (`apps/ips`): directory pages grouping all
+  known IPs by GeoIP country / WHOIS ASN, each row linking into the
+  existing filtered IP list (`?q=<code>` / `?asn=<n>`, both already
+  supported by `ip_list`). Deliberately not scoped to a time window -
+  see `DashboardAnalyticsService` for the period-scoped, 503-incident
+  country chart this doesn't duplicate. ASNs group by `asn` alone
+  (`Max("organization")` for display), not `(asn, organization)`,
+  since the same ASN's organization string can vary slightly across
+  individual WHOIS responses.
+- **Readers** (`apps/logs`): the raw incremental-read state
+  (inode/byte_offset/last_error) "Log Sources" only ever summarized
+  into a status dot, plus a "Poll now" button - previously the only
+  way to trigger a reader was to wait for Celery Beat's schedule.
+- **WHOIS** (`apps/whois`, previously had no `views.py`/`urls.py` at
+  all): a browsable, filter-by-IP archive of every `WhoisRecord`, and
+  a detail page finally showing a lookup's actual raw response and
+  parsed fields - nowhere in the UI displayed `raw_response` before
+  this, even on the IP detail page's "Recent WHOIS Lookups" table.
+
+13 new tests; 305/305 passing against the same real Postgres/Redis,
+plus a live `runserver` check that all four new pages return 200.
+
+The async pipeline itself was then verified for real too: a real
+`celery worker` (all five named queues) and a real `celery beat`
+(`django_celery_beat`'s `DatabaseScheduler`) against the same real
+Redis broker - not `CELERY_TASK_ALWAYS_EAGER`, which is all any test
+in this repo exercises. Dispatched `process_new_ip` from a separate
+process; the worker picked it up over the broker, chained into real
+`perform_whois_lookup` / `classify_ip` / `enrich_ip` tasks, and the
+WHOIS lookup hit RIPE's actual WHOIS service and got back (and
+correctly parsed) a real registration record - with `asn` correctly
+left unset, since that particular real response had no `origin:`
+field to parse. Also let beat run long enough to fire "Poll enabled
+log sources" (every 30s) on its own schedule and confirmed the worker
+executed it. No bugs found this round - unlike the migration/test-suite
+verification and the nav-placeholder pass before it, this one held up
+end-to-end on the first try.
+
+Proving real network access was available (the WHOIS lookup above)
+prompted going back to fix something that access had actually been
+blocking: **Iran CIDR classification, the application's namesake
+feature, now has a real, working data source.**
+`apps.iran.providers.RipeNccDelegatedStatsProvider`
+(`IRAN_CIDR_SOURCE=ripencc`) fetches and parses RIPE NCC's own
+delegated-extended stats file - the registry's primary allocation
+record, freely published, no API key or account required - and
+extracts every IPv4/IPv6 block currently allocated or assigned to Iran.
+Run for real against the live file: **2,529 CIDR blocks fetched and
+persisted**, and a real address inside one of them
+(`2.57.3.1`, matched against `2.57.3.0/24`) correctly classified
+`is_iran=True` by the unmodified, already-existing classification code.
+`IRAN_CIDR_SOURCE` still defaults to `static` (an empty
+`CountryNetwork` table, populated only if an operator adds rows) rather
+than switching every deployment onto a new external network dependency
+by default - that's a deliberate choice a deployment should make, not
+something to change silently. Fixed a real bug surfaced while building
+this: `IranCIDRValidationService.run()`'s disable-stale-entries pass
+was scoped to `source="manual"` unconditionally, so a second provider's
+entries would never be disabled when the upstream feed stopped
+reporting them; it's now scoped to `provider.SOURCE`, and each provider
+declares its own (`static` -> `"manual"`, `ripencc` -> `"ripencc"`), so
+two providers' data can coexist in `CountryNetwork` without one's
+validation pass touching the other's rows. 11 new tests (offline,
+fixture-based parsing coverage - the live RIPE fetch above was a manual
+verification, not something the test suite depends on network for).
+
+The same pattern applied one more time, to GeoIP: MaxMind's own
+GeoLite2-City needs a licensed account, so `MaxMindGeoIPProvider`
+(unmodified - no new code needed) was verified for real against
+**DB-IP's City Lite database instead** (download.db-ip.com/free/, CC BY
+4.0, no signup) - DB-IP builds it in the same MaxMind DB binary format
+specifically for compatibility with the standard `geoip2` library this
+provider already uses. Downloaded the real ~130MB file and ran a real
+lookup through the unmodified app code
+(`GeoIPService.enrich()` against real Postgres): `2.57.3.1` -> Tehran,
+Iran, `35.7239/51.4329` - correctly persisted onto the IP row. Surfaced
+one now-stale test in the process: `MaxMindGeoIPProviderTests` asserted
+an "import fails, package genuinely isn't installed" path by relying on
+`geoip2` being absent from the sandbox - no longer true once installing
+it to run this verification (and never true in a real deployment,
+since `requirements/base.txt` already declares it). Fixed with
+`patch.dict(sys.modules, {"geoip2.database": None})` so the test forces
+the failure deterministically instead of depending on ambient
+environment state - same category of fix as the Redis-unreachable test
+two commits back.
+
+**Then the last remaining mocked-only surface got the same treatment:
+SSH itself.** Every prior phase's SSH-connectivity tests used a mocked
+`paramiko.SSHClient` - `apps.servers.services.SSHService` had never
+actually opened a real SSH connection. Ran a real, rootless `sshd`
+(this sandbox's `openssh-server` package, no root needed - a generated
+host key, a generated client keypair, `UsePAM no`, an unprivileged
+port) and pointed a real `Server` row at it. Result: the entire
+ingestion pipeline, unmocked end to end, in one pass -
+
+1. `SSHService.test_connection()` - real paramiko connection, real
+   `uname -s` / `command -v nginx` exec over the wire.
+2. `discover_server_logs` - real SFTP directory listing found a real
+   log file.
+3. `poll_log_source`, called twice - the first call correctly
+   baselined to end-of-file without backfilling the file's existing
+   content (`known_inode=None`'s documented behavior, not a bug);
+   after appending new lines and polling again, a real `stat` over SSH
+   plus a real SFTP range-read pulled back exactly the new bytes.
+4. `NginxLogParser` correctly parsed real combined-format lines and
+   kept only the 503s, discarding a 200 in the same batch.
+5. `IPIntelligenceService.record_sightings_bulk()` correctly dispatched
+   `process_new_ip` only for the genuinely new IP in the batch, not one
+   already known from an earlier manual test - confirmed by reading its
+   own docstring's claimed behavior, not assumed.
+6. That real Celery task chain (drained by a real worker against the
+   real Redis broker) produced a **real WHOIS lookup** for the new IP
+   (`185.231.114.5` -> ASN 197946, "Amnpardaz Soft Corporation") and
+   **real Iran CIDR classification** against the RIPE data from two
+   commits ago (`is_iran=True`, matched `185.231.114.0/24`).
+
+No bugs found, no code changes needed - every piece already worked
+correctly together. This closes the loop: as of this pass, every major
+subsystem (Postgres/migrations, the full test suite, Celery worker +
+beat against a real broker, WHOIS, Iran CIDR classification, GeoIP,
+and now SSH/SFTP log ingestion) has been exercised against something
+real, not a mock, at least once.
+
+One more gap, present since Phase 1: `requirements/base.txt` has
+always pinned `Django>=5.2,<5.3`, but every verification pass above -
+including all of the real-infrastructure work described just above -
+actually ran against Django 5.0.14, the version already installed in
+this shared sandbox. `manage.py check` and `manage.py test` never
+actually exercised the declared target version. Rather than upgrade
+the sandbox's shared, global Django install (other concurrent sessions
+were using it, confirmed via `ps aux`), built an isolated virtualenv
+(`virtualenv --system-site-packages`, since `python3 -m venv` needs
+`python3.11-venv`, which needs root) and installed the real
+`requirements/development.txt` into just that venv - resolving
+cleanly to Django 5.2.17 (`pip check`: no broken requirements). Ran,
+for real, inside that venv: `manage.py check` (clean), the full test
+suite (**319/319 passing**), and a live `runserver` - a real login
+(CSRF token fetched, session cookie issued, `verify52` superuser
+authenticated), a real authenticated dashboard GET (`200`, the actual
+rendered "Dashboard — IP Scout" page, not an error page), a real
+`/ips/` and `/admin/` GET, all against the same real Postgres/Redis
+used throughout this session. No bugs found, no code changes needed -
+the version `requirements/base.txt` has always declared genuinely
+works, now actually proven rather than assumed.
+
+The production settings module (`config/settings/production.py`) had
+never been run either - every prior check/test/runserver pass in this
+session used `config.settings.test` or plain `base.py` defaults, never
+`DEBUG=False` with WhiteNoise, Gunicorn, and the HSTS/proxy-SSL
+settings actually wired together the way the Docker/systemd deploy
+paths described below run it for real. Verified in the same venv:
+`collectstatic` under production settings (127 files, WhiteNoise's
+`CompressedManifestStaticFilesStorage` correctly hash-named and
+gzip/brotli-compressed all of them into a real manifest); `gunicorn
+config.wsgi:application` (the exact command the Dockerfile and
+`ipscout-gunicorn.service` both run) booting clean with two workers;
+a real login flow and a real static-file fetch through it (`200`,
+correct `Cache-Control: immutable` on the hashed filename); and the
+`SECURE_PROXY_SSL_HEADER` trust chain nginx's TLS termination depends
+on - no `Strict-Transport-Security` header on a plain request, but a
+real one appears the moment `X-Forwarded-Proto: https` is sent, proving
+Django only trusts that header coming through the proxy, not a client
+that could spoof it directly if nginx weren't in front. No bugs found,
+no code changes needed.
+
+Nothing in the UI or API returns fabricated data — every nav entry now
+has a real page behind it, and no result is invented when a source
+(GeoIP, WHOIS, Iran CIDR) has nothing to say. `GEOIP_PROVIDER` defaults
+to `null` and `IRAN_CIDR_SOURCE` defaults to `static` (both start
+empty) - not because real data is unreachable (both now have a
+verified-working real source, see above and Settings → GeoIP / Iran
+CIDR Sources), but because embedding a large, independently-updated
+external dataset - or pointing a scheduled task at an external network
+dependency - by default is a deployment's decision, not something to
+default silently.
 
 Phase 10, concretely:
 
@@ -86,7 +289,7 @@ apps/
   servers/         Server model, SSHService (test/discover/poll_log), CRUD views
   logs/            LogSource model, NginxLogParser, NginxLogReader, poll Celery tasks
   ips/             IPAddress (full schema), IPIntelligenceService, process_new_ip + purge tasks, IP list + detail
-  whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup, purge task
+  whois/           WhoisService (subprocess), WhoisParser, WhoisRecord, perform_whois_lookup, purge task, browsable list/detail views
   geo/             GeoIPProvider (null/maxmind), GeoIPService, enrich_ip
   incidents/       RequestEvent, 503 Overview/IPs/Timeline views, purge task    (rollups: still open)
   iran/            CountryNetwork, IPCountryHistory, IranCIDRProvider, matching, monthly validation, export

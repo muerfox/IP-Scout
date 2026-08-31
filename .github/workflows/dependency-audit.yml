@@ -1,0 +1,32 @@
+name: Dependency audit
+
+on:
+  schedule:
+    # Mondays at 06:00 UTC - catches newly-disclosed CVEs in already-pinned
+    # dependencies, which a push-triggered check would never re-run for.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - "requirements/*.txt"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements/production.txt
+          pip install -r requirements/development.txt
+
+      - name: pip-audit
+        run: pipx run pip-audit --local
