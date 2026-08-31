@@ -1,6 +1,7 @@
 import unittest
 
-from django.core.exceptions import ValidationError
+from cryptography.fernet import Fernet
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.test import override_settings
 
 from apps.common.fields import CIDRField, EncryptedTextField
@@ -26,6 +27,24 @@ class EncryptedTextFieldTests(unittest.TestCase):
         field = EncryptedTextField()
         self.assertNotEqual(field.get_prep_value("a"), field.get_prep_value("b"))
 
+    @override_settings(SSH_CREDENTIAL_ENCRYPTION_KEY="")
+    def test_raises_when_encryption_key_unset(self):
+        field = EncryptedTextField()
+        with self.assertRaises(ImproperlyConfigured):
+            field.get_prep_value("hunter2")
+
+    def test_from_db_value_returns_empty_on_key_rotation(self):
+        """Ciphertext encrypted under an old key can't decrypt under the
+        current one after a key rotation - from_db_value should surface
+        empty string rather than crash."""
+        old_key = Fernet.generate_key().decode()
+        with override_settings(SSH_CREDENTIAL_ENCRYPTION_KEY=old_key):
+            ciphertext = EncryptedTextField().get_prep_value("hunter2")
+
+        new_key = Fernet.generate_key().decode()
+        with override_settings(SSH_CREDENTIAL_ENCRYPTION_KEY=new_key):
+            self.assertEqual(EncryptedTextField().from_db_value(ciphertext, None, None), "")
+
 
 class CIDRFieldTests(unittest.TestCase):
     """No DB needed - exercises the field's (de)serialization directly."""
@@ -49,6 +68,12 @@ class CIDRFieldTests(unittest.TestCase):
         field = CIDRField()
         self.assertEqual(field.from_db_value("1.2.3.0/24", None, None), "1.2.3.0/24")
         self.assertIsNone(field.from_db_value(None, None, None))
+
+    def test_to_python(self):
+        field = CIDRField()
+        self.assertIsNone(field.to_python(None))
+        self.assertIsNone(field.to_python(""))
+        self.assertEqual(field.to_python("1.2.3.0/24"), "1.2.3.0/24")
 
 
 _locmem_cache = override_settings(

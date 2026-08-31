@@ -12,7 +12,7 @@ from apps.users.models import AuditLogEntry
 
 from .forms import ServerForm
 from .models import Server
-from .services import ConnectionTestResult, SSHConnectionError, SSHService
+from .services import DEFAULT_LOG_DIR, ConnectionTestResult, SSHConnectionError, SSHService
 
 User = get_user_model()
 
@@ -138,6 +138,51 @@ class SSHServiceTests(unittest.TestCase):
 
         self.assertEqual([f.path for f in files], ["/var/log/nginx/access.log"])
         sftp.close.assert_called_once()
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_discover_logs_dedupes_across_directories(self, mock_client_cls):
+        """A path reachable through two configured directories (e.g. an
+        extra path duplicating the default one) is only reported once."""
+        client = MagicMock()
+        client.__enter__.return_value = client
+        sftp = MagicMock()
+        client.open_sftp.return_value = sftp
+
+        file_entry = MagicMock(filename="access.log", st_size=1024, st_mtime=1_700_000_000)
+        file_entry.st_mode = 0o100644  # regular file
+        sftp.listdir_attr.return_value = [file_entry]
+        mock_client_cls.return_value = client
+
+        server = make_server(ssh_auth_type=Server.AuthType.SSH_KEY, ssh_private_key="")
+        with patch.object(SSHService, "_load_private_key", return_value=MagicMock()):
+            files = SSHService(server).discover_logs(extra_paths=[DEFAULT_LOG_DIR])
+
+        self.assertEqual([f.path for f in files], ["/var/log/nginx/access.log"])
+
+    @patch("apps.servers.services.paramiko.SSHClient")
+    def test_discover_logs_survives_missing_directory(self, mock_client_cls):
+        client = MagicMock()
+        client.__enter__.return_value = client
+        sftp = MagicMock()
+        sftp.listdir_attr.side_effect = FileNotFoundError
+        client.open_sftp.return_value = sftp
+        mock_client_cls.return_value = client
+
+        server = make_server(ssh_auth_type=Server.AuthType.SSH_KEY, ssh_private_key="")
+        with patch.object(SSHService, "_load_private_key", return_value=MagicMock()):
+            files = SSHService(server).discover_logs()
+
+        self.assertEqual(files, [])
+
+    def test_connect_kwargs_error_propagates_through_client(self):
+        """_connect_kwargs() raising SSHConnectionError (e.g. no password
+        configured) is re-raised as-is by _client(), not wrapped again."""
+        server = make_server(ssh_auth_type=Server.AuthType.PASSWORD, ssh_private_key="")
+
+        result = SSHService(server).test_connection()
+
+        self.assertFalse(result.success)
+        self.assertIn("No SSH password configured", result.error)
 
     def test_load_private_key_empty_raises(self):
         with self.assertRaises(SSHConnectionError):
