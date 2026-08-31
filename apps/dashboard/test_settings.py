@@ -32,6 +32,12 @@ class SettingsPagesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "null")
 
+    @override_settings(GEOIP_PROVIDER="unknown-provider")
+    def test_geoip_surfaces_provider_misconfiguration(self):
+        response = self.client.get(reverse("dashboard:settings-geoip"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Unknown GEOIP_PROVIDER")
+
     def test_iran_sources_renders_config(self):
         response = self.client.get(reverse("dashboard:settings-iran-sources"))
         self.assertEqual(response.status_code, 200)

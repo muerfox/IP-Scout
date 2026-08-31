@@ -282,6 +282,15 @@ class ClassifyIpTaskTests(TestCase):
 
         classify_ip(self.ip.id)
 
+    def test_logs_match_when_ip_is_iranian(self):
+        CountryNetwork.objects.create(country_code="IR", cidr="5.1.0.0/22", source="manual")
+        from .tasks import classify_ip
+
+        classify_ip(self.ip.id)  # exercises the is_iran logging branch
+
+        self.ip.refresh_from_db()
+        self.assertTrue(self.ip.is_iran)
+
     def test_missing_ip_returns_silently(self):
         from .tasks import classify_ip
 

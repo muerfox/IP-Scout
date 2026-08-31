@@ -2,10 +2,11 @@ import unittest
 
 from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 
 from apps.common.fields import CIDRField, EncryptedTextField
 from apps.common.locks import LockHeldError, redis_lock
+from apps.common.utils import get_client_ip
 
 
 class EncryptedTextFieldTests(unittest.TestCase):
@@ -74,6 +75,20 @@ class CIDRFieldTests(unittest.TestCase):
         self.assertIsNone(field.to_python(None))
         self.assertIsNone(field.to_python(""))
         self.assertEqual(field.to_python("1.2.3.0/24"), "1.2.3.0/24")
+
+
+class GetClientIpTests(unittest.TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def test_trusts_first_hop_of_x_forwarded_for(self):
+        request = self.factory.get("/", HTTP_X_FORWARDED_FOR="5.1.1.1, 10.0.0.1, 10.0.0.2")
+        self.assertEqual(get_client_ip(request), "5.1.1.1")
+
+    def test_falls_back_to_remote_addr_without_forwarded_header(self):
+        request = self.factory.get("/")
+        request.META["REMOTE_ADDR"] = "127.0.0.1"
+        self.assertEqual(get_client_ip(request), "127.0.0.1")
 
 
 _locmem_cache = override_settings(

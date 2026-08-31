@@ -125,6 +125,25 @@ class IPExportServiceTests(TestCase):
         queryset = IPExportService.build_queryset(filters)
         self.assertEqual(list(queryset.values_list("address", flat=True)), ["5.1.1.1"])
 
+    def test_period_filter_excludes_old_events(self):
+        old_event_ip = IPAddress.objects.create(
+            address="9.9.9.8", version=4, first_seen_at=timezone.now(), last_seen_at=timezone.now(),
+            is_iran=True,
+        )
+        RequestEvent.objects.create(
+            server=self.server,
+            log_source=self.log_source,
+            ip=old_event_ip,
+            timestamp=timezone.now() - timedelta(days=10),
+            status=503,
+            bytes=1,
+            raw_line="raw",
+        )
+
+        queryset = IPExportService.build_queryset(ExportFilters(period="24h"))
+
+        self.assertEqual(list(queryset.values_list("address", flat=True)), ["5.1.1.1"])
+
     def test_previous_iran_status(self):
         network = CountryNetwork.objects.create(country_code="IR", cidr="9.9.9.0/24", source="manual")
         IranCIDRService.classify(self.other_ip)

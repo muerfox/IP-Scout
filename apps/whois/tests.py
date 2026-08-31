@@ -100,6 +100,13 @@ class WhoisServiceTests(unittest.TestCase):
         service = WhoisService(binary="/nonexistent/whois", timeout=1)
         self.assertEqual(service.binary, str(self.fake_whois))
 
+    @patch("apps.whois.services.subprocess.run", side_effect=OSError("permission denied"))
+    def test_oserror_spawning_binary_is_retryable(self, mock_run):
+        result = self._service().lookup("9.9.9.9")
+        self.assertFalse(result.success)
+        self.assertTrue(result.retryable)
+        self.assertIn("permission denied", result.error)
+
     def test_response_hash_is_deterministic_sha256(self):
         text = "hello whois"
         self.assertEqual(WhoisService.response_hash(text), hashlib.sha256(text.encode()).hexdigest())

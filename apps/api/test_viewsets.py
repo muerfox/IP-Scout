@@ -174,6 +174,11 @@ class RequestEventApiTests(ApiTestBase):
         response = self.client.get("/api/v1/503/", {"days": "7"})
         self.assertEqual(response.json()["count"], 2)
 
+    def test_non_numeric_days_query_param_is_ignored(self):
+        response = self.client.get("/api/v1/503/", {"days": "not-a-number"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 2)
+
 
 class IranApiTests(ApiTestBase):
     def test_iran_ips_endpoint(self):

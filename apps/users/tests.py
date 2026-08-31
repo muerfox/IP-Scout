@@ -53,6 +53,14 @@ class AuditLogTests(TestCase):
         self.assertEqual(entry.user_id, self.user.id)
         self.assertEqual(entry.ip_address, "1.2.3.4")
 
+    def test_str_shows_system_when_no_user(self):
+        entry = record_audit_log("server.added", obj=self.user)
+        self.assertEqual(str(entry), f"system server.added ({AuditLogEntry.Result.SUCCESS})")
+
+    def test_str_shows_username_when_user_set(self):
+        entry = record_audit_log("server.added", user=self.user)
+        self.assertEqual(str(entry), f"operator server.added ({AuditLogEntry.Result.SUCCESS})")
+
 
 class AuditLogViewTests(TestCase):
     def setUp(self):
