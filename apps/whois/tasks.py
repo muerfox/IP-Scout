@@ -120,6 +120,16 @@ def _run_lookup(task, ip: IPAddress) -> None:
         ]
     )
 
+    if ip.whois_country:
+        # process_new_ip fires this lookup and apps.iran's classify_ip in
+        # parallel, so the first classify_ip pass usually runs before
+        # whois_country exists. Re-run it now that a real WHOIS country is
+        # on the record, so IranCIDRService.classify's whois fallback
+        # (see its docstring) isn't silently lost to that race.
+        from apps.iran.tasks import classify_ip
+
+        classify_ip.delay(ip.id)
+
 
 def _guess_whois_server(generic: dict[str, list[str]]) -> str:
     for key in _REFERRAL_KEYS:

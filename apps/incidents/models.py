@@ -1,8 +1,10 @@
-"""HTTP 503 request tracking (spec section 11).
+"""HTTP request tracking (spec section 11).
 
-One row per parsed 503 line - the reader (apps.logs.services.NginxLogReader)
-only ever writes rows here for status == 503 (spec section 10: "the main
-purpose is 503"). Hourly/daily rollups for the dashboard are Phase 8.
+One row per parsed access-log line, any HTTP status - the reader
+(apps.logs.services.NginxLogReader) records every line it can parse, not
+just 503s, so an IP's history and enrichment don't depend on it having
+5xx'd. Filter on `status` for 503-focused views (dashboard, exports).
+Hourly/daily rollups for the dashboard are Phase 8.
 """
 from __future__ import annotations
 

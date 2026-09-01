@@ -338,12 +338,11 @@ docker compose exec web python manage.py createsuperuser
 ## Usage: monitor a server and see IPs show up
 
 Adding a server does not, by itself, produce anything in the IP list —
-several steps have to happen first, and one part is easy to miss:
-**IP Scout only records requests that got a 503 response.** This is by
-design (see the top of this README) - ordinary 200/301/404 traffic is
-parsed and discarded, never stored. If you're testing with a server
-that isn't currently returning any 503s, the IP list will stay empty
-no matter how long you wait, and that's expected.
+several steps have to happen first. Every successfully-parsed access-log
+line is recorded regardless of HTTP status (200/301/404/503/...) — the
+project's 503 focus (see the top of this README) shows up in what the
+dashboards/exports highlight, not in what gets written, so no IP is ever
+discarded just because its request wasn't a 503.
 
 1. **Servers → Add** — hostname, SSH port/user, and either an SSH key
    or password. Save.
@@ -370,15 +369,46 @@ no matter how long you wait, and that's expected.
    lines appended *after* you enabled monitoring are ever read. Existing
    log history is intentionally never replayed.
 
-To confirm the whole pipeline works end to end, generate a real 503
-against the monitored server after enabling monitoring (e.g. request a
-path your nginx config is set up to reject, or briefly stop the
-upstream it proxies to) and wait for the next 30-second poll. A log
-source's "Reader" status (pending/running/error) and its "Last
-read"/"Last event" columns on the server detail page show whether
-polling is happening at all, and its `last_error` field (visible in
-that same table) reports parse failures or a missing file — check
-those first if IPs still aren't appearing after a few polls.
+To confirm the whole pipeline works end to end, generate real traffic
+against the monitored server after enabling monitoring and wait for the
+next 30-second poll. A log source's "Reader" status
+(pending/running/error) and its "Last read"/"Last event" columns on the
+server detail page show whether polling is happening at all, and its
+`last_error` field (visible in that same table) reports parse failures
+or a missing file — check those first if IPs still aren't appearing
+after a few polls.
+
+### Iran status and the world map staying empty
+
+Two more gaps that look like bugs but are configuration, not code:
+
+- **Iran status never triggers.** `is_iran` is driven by the
+  `CountryNetwork` CIDR table (`Iran → CIDRs`), which ships empty by
+  design (see "Iran CIDR classification" above) — an IP's WHOIS-reported
+  country is only ever a secondary, lower-confidence fallback signal
+  when no CIDR row covers that address yet. If `Iran → CIDRs` is empty
+  or doesn't cover your traffic's ranges, populate it: manually via
+  `Iran → CIDRs → Add`, or with real RIPE NCC registry data by setting
+  `IRAN_CIDR_SOURCE=ripencc` and bootstrapping once (the monthly Beat
+  task won't seed an empty table on its own):
+  ```bash
+  python manage.py shell -c "
+  from apps.iran.services import IranCIDRValidationService
+  from apps.iran.providers import RipeNccDelegatedStatsProvider
+  print(IranCIDRValidationService.run(RipeNccDelegatedStatsProvider()))
+  "
+  ```
+  Already-recorded IPs aren't retroactively reclassified just by adding
+  CIDR data — use each IP's "Recalculate Iran" button, or re-run
+  `IranCIDRService.classify(ip)` in a shell loop over `IPAddress.objects.all()`.
+- **World Map stays empty.** Coordinates only exist for IPs the
+  configured GeoIP provider has enriched. `GEOIP_PROVIDER` defaults to
+  `null`, which honestly returns nothing for every lookup — no
+  geolocation database ships with this project. Point
+  `GEOIP_PROVIDER=maxmind` and `GEOIP_DATABASE_PATH` at a real `.mmdb`
+  file (MaxMind's GeoLite2-City, or DB-IP's free City Lite database in
+  the same format) to populate `latitude`/`longitude` for new IPs going
+  forward.
 
 ## Testing
 

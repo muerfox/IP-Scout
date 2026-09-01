@@ -174,7 +174,12 @@ class ProcessNewIpTaskTests(TestCase):
         from .tasks import process_new_ip
 
         process_new_ip(self.ip.id)
-        mock_classify_delay.assert_called_once_with(self.ip.id)
+        # Dispatched directly here, and (in this eager-task test setup)
+        # a second time from apps.whois.tasks._run_lookup once the
+        # parallel WHOIS lookup completes and sets whois_country - see
+        # IranCIDRService.classify's whois fallback. Either way it must
+        # run at least once with this IP.
+        mock_classify_delay.assert_any_call(self.ip.id)
 
 
 class IpListViewTests(TestCase):

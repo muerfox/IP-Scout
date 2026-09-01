@@ -34,11 +34,36 @@ class IranCIDRService:
         CIDR, persist the result on `ip`, and record an IPCountryHistory
         transition if it actually changed (spec section 22 - allocations
         change, so `is_iran` alone isn't enough to answer "was this IP
-        Iranian last month?")."""
+        Iranian last month?").
+
+        The CIDR database is checked first and is authoritative when it
+        has an answer (confidence=1.0, real registry/operator-verified
+        containment). When no CIDR row covers this address yet - the
+        CountryNetwork list is commonly incomplete or empty until an
+        operator populates it - a WHOIS-reported country of "IR" is used
+        as a real but lower-confidence fallback signal (confidence=0.5)
+        rather than leaving is_iran False on data the IP record already
+        has. This is never fabricated: whois_country only ever comes from
+        an actual parsed WHOIS response (apps.whois)."""
         match = IranCIDRService.find_matching_cidr(ip.address)
         now = timezone.now()
-        new_is_iran = match is not None
-        new_cidr = str(match.cidr) if match else None
+
+        if match is not None:
+            new_is_iran = True
+            new_cidr = str(match.cidr)
+            source = match.source
+            confidence = 1.0
+        elif ip.whois_country == IRAN_COUNTRY_CODE:
+            new_is_iran = True
+            new_cidr = None
+            source = "whois"
+            confidence = 0.5
+        else:
+            new_is_iran = False
+            new_cidr = None
+            source = ""
+            confidence = 1.0
+
         changed = new_is_iran != ip.is_iran or new_cidr != ip.iran_match_cidr
 
         with transaction.atomic():
@@ -46,14 +71,14 @@ class IranCIDRService:
                 # Close out whatever period was open (a no-op if the IP
                 # was never Iranian - the filter simply matches nothing).
                 IPCountryHistory.objects.filter(ip=ip, valid_until__isnull=True).update(valid_until=now)
-                if match is not None:
+                if new_is_iran:
                     IPCountryHistory.objects.create(
                         ip=ip,
                         country_code=IRAN_COUNTRY_CODE,
-                        source=match.source,
+                        source=source,
                         cidr=new_cidr,
                         valid_from=now,
-                        confidence=1.0,
+                        confidence=confidence,
                     )
             ip.is_iran = new_is_iran
             ip.iran_match_cidr = new_cidr

@@ -169,6 +169,15 @@ class PerformWhoisLookupTaskTests(TestCase):
         self.assertIsNotNone(self.ip.whois_next_check_at)
         self.assertEqual(WhoisRecord.objects.filter(ip=self.ip).count(), 1)
 
+    @patch("apps.iran.tasks.classify_ip.delay")
+    def test_successful_lookup_redispatches_iran_classification(self, mock_classify_delay):
+        from .tasks import perform_whois_lookup
+
+        with self.settings(WHOIS_BINARY=str(self.fake_whois)):
+            perform_whois_lookup(self.ip.id)
+
+        mock_classify_delay.assert_called_once_with(self.ip.id)
+
     def test_skips_when_fresh_and_not_forced(self):
         self.ip.whois_next_check_at = timezone.now() + timedelta(days=1)
         self.ip.save()
