@@ -335,6 +335,51 @@ docker compose exec web python manage.py createsuperuser
 - App: http://localhost:8000 (direct) or http://localhost:8080 (via the nginx service)
 - `web` runs migrate + `runserver` for dev convenience; production uses Gunicorn (see `Dockerfile` / `docker-compose.prod.yml` you provide for your environment).
 
+## Usage: monitor a server and see IPs show up
+
+Adding a server does not, by itself, produce anything in the IP list —
+several steps have to happen first, and one part is easy to miss:
+**IP Scout only records requests that got a 503 response.** This is by
+design (see the top of this README) - ordinary 200/301/404 traffic is
+parsed and discarded, never stored. If you're testing with a server
+that isn't currently returning any 503s, the IP list will stay empty
+no matter how long you wait, and that's expected.
+
+1. **Servers → Add** — hostname, SSH port/user, and either an SSH key
+   or password. Save.
+2. **Test Connection** (server detail page) — confirms SSH reachability,
+   that the remote OS is Linux, and whether `nginx` was found. Fix any
+   error here before continuing.
+3. **Rescan Logs** — SSHes in and lists candidate files under
+   `/var/log/nginx/` (plus any paths in the server's "extra log search
+   paths" field) into the "Discovered Logs" table. This only discovers
+   files; it does not start reading them.
+4. **Enable** each log file you want tailed, in its row's "Monitor"
+   column. Discovered log sources always start disabled — the button
+   reads "Enable" until you click it, then "Monitoring".
+5. Make sure both Celery processes are running (see "Local development"
+   above) — the worker consuming the `logs` queue, and Celery Beat with
+   the `django_celery_beat` database scheduler. Beat is what actually
+   drives polling: every 30 seconds by default (editable at
+   `/admin/django_celery_beat/periodictask/` → "Poll enabled log
+   sources") it fans out one read per enabled, monitored log source. If
+   only `runserver` is running, nothing will ever be read, and every log
+   source's Reader status will stay "pending" forever.
+6. The **first** poll of a newly-enabled log source establishes a
+   baseline at the file's current end and does not backfill - only
+   lines appended *after* you enabled monitoring are ever read. Existing
+   log history is intentionally never replayed.
+
+To confirm the whole pipeline works end to end, generate a real 503
+against the monitored server after enabling monitoring (e.g. request a
+path your nginx config is set up to reject, or briefly stop the
+upstream it proxies to) and wait for the next 30-second poll. A log
+source's "Reader" status (pending/running/error) and its "Last
+read"/"Last event" columns on the server detail page show whether
+polling is happening at all, and its `last_error` field (visible in
+that same table) reports parse failures or a missing file — check
+those first if IPs still aren't appearing after a few polls.
+
 ## Testing
 
 ```bash
