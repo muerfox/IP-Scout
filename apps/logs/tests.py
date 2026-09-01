@@ -179,8 +179,8 @@ class DiscoverServerLogsTaskTests(TestCase):
 
 class NginxLogReaderTests(TestCase):
     """SSHService is mocked so these test the reader's own logic (line
-    splitting, 503 filtering, IP dedup, offset/state bookkeeping) in
-    isolation from real SSH/paramiko behavior (covered separately in
+    splitting, IP dedup, offset/state bookkeeping) in isolation from real
+    SSH/paramiko behavior (covered separately in
     apps.servers.tests.SSHServicePollLogTests)."""
 
     def setUp(self):
@@ -196,7 +196,7 @@ class NginxLogReaderTests(TestCase):
         )
 
     @patch("apps.logs.services.SSHService")
-    def test_creates_request_event_for_503_only_and_leaves_partial_line_unconsumed(self, mock_ssh_cls):
+    def test_creates_request_event_for_every_status_and_leaves_partial_line_unconsumed(self, mock_ssh_cls):
         complete = [
             b'1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 503 10 "-" "-"',
             b'5.6.7.8 - - [26/Aug/2026:04:30:01 +0000] "GET /b HTTP/1.1" 200 20 "-" "-"',
@@ -210,13 +210,15 @@ class NginxLogReaderTests(TestCase):
 
         summary = NginxLogReader(self.log_source).poll()
 
-        self.assertEqual(summary.events_created, 1)
+        self.assertEqual(summary.events_created, 2)
         self.assertEqual(summary.lines_read, 2)
-        self.assertEqual(RequestEvent.objects.count(), 1)
-        event = RequestEvent.objects.get()
-        self.assertEqual(event.status, 503)
-        self.assertEqual(IPAddress.objects.count(), 1)
-        self.assertEqual(IPAddress.objects.get().address, "1.2.3.4")
+        self.assertEqual(RequestEvent.objects.count(), 2)
+        statuses = set(RequestEvent.objects.values_list("status", flat=True))
+        self.assertEqual(statuses, {503, 200})
+        self.assertEqual(IPAddress.objects.count(), 2)
+        self.assertEqual(
+            set(IPAddress.objects.values_list("address", flat=True)), {"1.2.3.4", "5.6.7.8"}
+        )
 
         self.log_source.refresh_from_db()
         self.assertEqual(self.log_source.byte_offset, len(complete_bytes))  # partial line not consumed

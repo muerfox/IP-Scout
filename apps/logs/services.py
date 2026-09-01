@@ -54,7 +54,7 @@ class NginxLogReader:
         complete_lines = [line.decode("utf-8", errors="replace") for line in raw_lines if line]
 
         parser = NginxLogParser(self.log_source.format)
-        parsed_503: list[ParsedLine] = []
+        parsed_lines: list[ParsedLine] = []
         parse_errors = 0
         for raw_line in complete_lines:
             try:
@@ -63,14 +63,18 @@ class NginxLogReader:
                 parse_errors += 1
                 logger.debug("log_source=%s parse error: %s", self.log_source.id, exc)
                 continue
-            if parsed.status == 503:
-                parsed_503.append(parsed)
+            # Every successfully-parsed line is recorded regardless of
+            # status - an IP's history and Iran/geo/whois enrichment
+            # shouldn't depend on it happening to have 5xx'd. The 503
+            # focus lives in how RequestEvent.status is queried/displayed
+            # (dashboards, exports), not in what gets written here.
+            parsed_lines.append(parsed)
 
         events_created = 0
         latest_event_at = None
-        if parsed_503:
+        if parsed_lines:
             ip_map = IPIntelligenceService.record_sightings_bulk(
-                [(p.remote_addr, p.timestamp) for p in parsed_503]
+                [(p.remote_addr, p.timestamp) for p in parsed_lines]
             )
             events = [
                 RequestEvent(
@@ -88,11 +92,11 @@ class NginxLogReader:
                     referer=parsed.referer[:2048],
                     raw_line=parsed.raw_line[:8192],
                 )
-                for parsed in parsed_503
+                for parsed in parsed_lines
             ]
             RequestEvent.objects.bulk_create(events, batch_size=1000)
             events_created = len(events)
-            latest_event_at = max(p.timestamp for p in parsed_503)
+            latest_event_at = max(p.timestamp for p in parsed_lines)
 
         self.log_source.inode = chunk.inode
         self.log_source.byte_offset = chunk.offset + consumed_bytes

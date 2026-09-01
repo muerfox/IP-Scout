@@ -213,6 +213,33 @@ class IranCIDRServiceTests(TestCase):
         self.assertFalse(self.ip.is_iran)
         self.assertEqual(IPCountryHistory.objects.filter(ip=self.ip).count(), 0)
 
+    def test_classify_falls_back_to_whois_country_when_no_cidr_matches(self):
+        self.ip.whois_country = "IR"
+        self.ip.save(update_fields=["whois_country"])
+
+        IranCIDRService.classify(self.ip)
+
+        self.ip.refresh_from_db()
+        self.assertTrue(self.ip.is_iran)
+        self.assertIsNone(self.ip.iran_match_cidr)
+        history = IPCountryHistory.objects.get(ip=self.ip)
+        self.assertEqual(history.source, "whois")
+        self.assertEqual(history.confidence, 0.5)
+
+    def test_classify_prefers_cidr_match_over_whois_country(self):
+        CountryNetwork.objects.create(country_code="IR", cidr="5.1.0.0/22", source="manual")
+        self.ip.whois_country = "IR"
+        self.ip.save(update_fields=["whois_country"])
+
+        IranCIDRService.classify(self.ip)
+
+        self.ip.refresh_from_db()
+        self.assertTrue(self.ip.is_iran)
+        self.assertEqual(self.ip.iran_match_cidr, "5.1.0.0/22")
+        history = IPCountryHistory.objects.get(ip=self.ip)
+        self.assertEqual(history.source, "manual")
+        self.assertEqual(history.confidence, 1.0)
+
 
 class IranCIDRValidationServiceTests(TestCase):
     def test_creates_new_cidrs_from_provider(self):
