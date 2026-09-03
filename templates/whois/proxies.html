@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}WHOIS Proxies — IP Scout{% endblock %}
+{% block topbar_title %}WHOIS Proxies{% endblock %}
+
+{% block content %}
+  <div class="toolbar">
+    <h1>WHOIS Proxies <span class="subtitle">{{ proxies|length }} configured</span></h1>
+    <a class="btn btn-primary" href="{% url 'whois:proxy-add' %}">Add Proxy</a>
+  </div>
+
+  <div class="panel-note">
+    Public WHOIS servers rate-limit by source address. When at least one proxy here is
+    enabled, each WHOIS lookup picks the least-recently-used one and routes through it via
+    <code>proxychains-ng</code> (must be installed on the host running the <code>whois</code>
+    worker — set <code>WHOIS_PROXYCHAINS_BINARY</code> if it isn't named
+    <code>proxychains4</code> on PATH). No proxies configured (the default) means every lookup
+    runs direct, exactly as before. A proxy is auto-disabled after
+    <code>WHOIS_PROXY_MAX_FAILURES</code> consecutive failures — re-enable it here once fixed.
+  </div>
+
+  {% if proxies %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Proxy</th>
+          <th>Scheme</th>
+          <th>Host:Port</th>
+          <th>Enabled</th>
+          <th class="num">Uses</th>
+          <th class="num">Consec. failures</th>
+          <th>Last used</th>
+          <th>Last error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for proxy in proxies %}
+          {% include "whois/partials/proxy_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No proxies configured — every WHOIS lookup runs direct.</div>
+  {% endif %}
+{% endblock %}

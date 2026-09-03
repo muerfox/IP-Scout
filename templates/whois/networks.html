@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Networks — IP Scout{% endblock %}
+{% block topbar_title %}Networks{% endblock %}
+
+{% block content %}
+  <h1>Networks <span class="subtitle">{{ page_obj.paginator.count }} CIDR ranges observed via real WHOIS lookups</span></h1>
+
+  <form method="get" class="search-bar">
+    <input type="text" name="country" value="{{ country_query }}" placeholder="Filter by country code (e.g. IR)…" maxlength="2">
+    <button type="submit" class="btn btn-sm">Search</button>
+  </form>
+
+  {% if page_obj.object_list %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>CIDR</th>
+          <th>Country</th>
+          <th>Organization</th>
+          <th>Network</th>
+          <th>ASN</th>
+          <th class="num">Hits</th>
+          <th>First seen</th>
+          <th>Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for network in page_obj.object_list %}
+          <tr>
+            <td class="mono">{{ network.cidr }}</td>
+            <td>{{ network.country_code|default:"—" }}</td>
+            <td>{{ network.organization|default:"—" }}</td>
+            <td>{{ network.network|default:"—" }}</td>
+            <td class="mono">{{ network.asn|default:"—" }}</td>
+            <td class="num">{{ network.hit_count }}</td>
+            <td>{{ network.first_seen_at }}</td>
+            <td>{{ network.last_seen_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a class="btn btn-sm" href="?country={{ country_query }}&page={{ page_obj.previous_page_number }}">‹ Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="btn btn-sm" href="?country={{ country_query }}&page={{ page_obj.next_page_number }}">Next ›</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      No networks observed yet — this fills in as WHOIS lookups complete for logged IPs.
+    </div>
+  {% endif %}
+{% endblock %}

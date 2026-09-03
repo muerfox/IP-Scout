@@ -389,3 +389,169 @@ class PollAllLogSourcesTaskTests(TestCase):
         poll_all_log_sources()
 
         mock_delay.assert_not_called()
+
+
+class ManualLogUploadServiceTests(TestCase):
+    def test_ingest_records_every_status_and_creates_manual_server(self):
+        from apps.servers.models import Server
+
+        from .services import MANUAL_UPLOAD_SERVER_NAME, ManualLogUploadService
+
+        text = "\n".join(
+            [
+                '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 503 10 "-" "-"',
+                '5.6.7.8 - - [26/Aug/2026:04:30:01 +0000] "GET /b HTTP/1.1" 200 20 "-" "-"',
+                "garbage line that will not parse",
+            ]
+        )
+
+        summary = ManualLogUploadService.ingest(text, "combined", label="test-upload")
+
+        self.assertEqual(summary.lines_read, 3)
+        self.assertEqual(summary.events_created, 2)
+        self.assertEqual(summary.parse_errors, 1)
+        self.assertEqual(summary.new_ips, 2)
+        self.assertFalse(summary.truncated)
+
+        self.assertEqual(RequestEvent.objects.count(), 2)
+        self.assertEqual(
+            set(RequestEvent.objects.values_list("status", flat=True)), {503, 200}
+        )
+
+        server = Server.objects.get(name=MANUAL_UPLOAD_SERVER_NAME)
+        self.assertFalse(server.enabled)
+        log_source = LogSource.objects.get(server=server, name="test-upload")
+        self.assertEqual(log_source.format, "combined")
+        self.assertFalse(log_source.enabled)
+        self.assertEqual(log_source.last_error, "1 line(s) failed to parse")
+
+    def test_ingest_reuses_the_same_manual_server_across_uploads(self):
+        from apps.servers.models import Server
+
+        from .services import ManualLogUploadService
+
+        ManualLogUploadService.ingest(
+            '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"', "combined"
+        )
+        ManualLogUploadService.ingest(
+            '5.6.7.8 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"', "combined"
+        )
+
+        self.assertEqual(Server.objects.filter(name="Manual Uploads").count(), 1)
+        self.assertEqual(LogSource.objects.filter(server__name="Manual Uploads").count(), 2)
+
+    def test_ingest_does_not_duplicate_an_ip_seen_twice(self):
+        from .services import ManualLogUploadService
+
+        text = "\n".join(
+            [
+                '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"',
+                '1.2.3.4 - - [26/Aug/2026:04:30:05 +0000] "GET /b HTTP/1.1" 200 1 "-" "-"',
+            ]
+        )
+
+        summary = ManualLogUploadService.ingest(text, "combined")
+
+        self.assertEqual(summary.new_ips, 1)
+        self.assertEqual(IPAddress.objects.count(), 1)
+        self.assertEqual(RequestEvent.objects.count(), 2)
+
+    def test_ingest_truncates_at_max_lines(self):
+        from . import services
+
+        with patch.object(services, "MAX_UPLOAD_LINES", 1):
+            text = "\n".join(
+                [
+                    '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"',
+                    '5.6.7.8 - - [26/Aug/2026:04:30:00 +0000] "GET /b HTTP/1.1" 200 1 "-" "-"',
+                ]
+            )
+            summary = services.ManualLogUploadService.ingest(text, "combined")
+
+        self.assertTrue(summary.truncated)
+        self.assertEqual(summary.lines_read, 1)
+        self.assertEqual(RequestEvent.objects.count(), 1)
+
+    def test_ingest_with_no_parseable_lines_creates_no_events(self):
+        from .services import ManualLogUploadService
+
+        summary = ManualLogUploadService.ingest("garbage\nmore garbage", "combined")
+
+        self.assertEqual(summary.events_created, 0)
+        self.assertEqual(summary.parse_errors, 2)
+        self.assertEqual(RequestEvent.objects.count(), 0)
+
+
+class LogUploadViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="uploader", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("logs:upload"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_get_renders_form(self):
+        response = self.client.get(reverse("logs:upload"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Upload Log")
+
+    def test_post_pasted_text_creates_events(self):
+        response = self.client.post(
+            reverse("logs:upload"),
+            {
+                "format": "combined",
+                "label": "my-upload",
+                "logtext": '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"',
+            },
+        )
+        self.assertRedirects(response, reverse("logs:upload"))
+        self.assertEqual(RequestEvent.objects.count(), 1)
+        self.assertEqual(IPAddress.objects.get().address, "1.2.3.4")
+
+    def test_post_empty_shows_error_and_creates_nothing(self):
+        response = self.client.post(reverse("logs:upload"), {"format": "combined", "logtext": "   "})
+        self.assertRedirects(response, reverse("logs:upload"))
+        self.assertEqual(RequestEvent.objects.count(), 0)
+
+    def test_post_file_upload_creates_events(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        content = b'9.9.9.9 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 503 1 "-" "-"'
+        upload = SimpleUploadedFile("access.log", content)
+
+        response = self.client.post(
+            reverse("logs:upload"), {"format": "combined", "logfile": upload}
+        )
+        self.assertRedirects(response, reverse("logs:upload"))
+        self.assertEqual(RequestEvent.objects.count(), 1)
+        log_source = LogSource.objects.get()
+        self.assertEqual(log_source.name, "access.log")
+
+    def test_post_no_lines_match_format_shows_warning(self):
+        response = self.client.post(
+            reverse("logs:upload"), {"format": "combined", "logtext": "not a real log line"}
+        )
+        response = self.client.get(response.url)
+        self.assertContains(response, "No lines matched format")
+        self.assertEqual(RequestEvent.objects.count(), 0)
+
+    def test_post_truncated_shows_warning(self):
+        from . import services
+
+        with patch.object(services, "MAX_UPLOAD_LINES", 1):
+            response = self.client.post(
+                reverse("logs:upload"),
+                {
+                    "format": "combined",
+                    "logtext": "\n".join(
+                        [
+                            '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"',
+                            '5.6.7.8 - - [26/Aug/2026:04:30:00 +0000] "GET /b HTTP/1.1" 200 1 "-" "-"',
+                        ]
+                    ),
+                },
+            )
+            response = self.client.get(response.url)
+        self.assertContains(response, "were processed (upload was larger)")

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Log — IP Scout{% endblock %}
+{% block topbar_title %}Upload Log{% endblock %}
+
+{% block content %}
+  <h1>Upload Log <span class="subtitle">paste or upload a raw nginx access log — no server setup required</span></h1>
+
+  <form method="post" enctype="multipart/form-data" class="form-card" style="margin-top: 16px;">
+    {% csrf_token %}
+
+    <div class="form-row">
+      <label for="id_format">Log format</label>
+      <select name="format" id="id_format">
+        {% for value in format_choices %}
+          <option value="{{ value }}">{{ value }}</option>
+        {% endfor %}
+      </select>
+      <div class="help-text">
+        Must match how the lines were actually written. Default nginx <code>combined</code> is
+        <code class="mono">{{ nginx_log_formats.combined }}</code>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label for="id_label">Label <span class="muted">(optional)</span></label>
+      <input type="text" name="label" id="id_label" maxlength="255" placeholder="e.g. edge-1 access.log, 2026-09-03">
+      <div class="help-text">Shown in Log Sources / Readers so you can tell uploads apart later.</div>
+    </div>
+
+    <div class="form-row">
+      <label for="id_logfile">Upload a file</label>
+      <input type="file" name="logfile" id="id_logfile">
+    </div>
+
+    <div class="form-row">
+      <label for="id_logtext">…or paste log lines</label>
+      <textarea name="logtext" id="id_logtext" rows="14" class="mono"
+        placeholder="1.2.3.4 - - [03/Sep/2026:12:00:00 +0000] &quot;GET / HTTP/1.1&quot; 200 512 &quot;-&quot; &quot;curl/8.0&quot;"
+        style="width:100%; font-size: 13px;"></textarea>
+      <div class="help-text">If both a file and pasted text are given, the file wins.</div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Process log</button>
+      <a class="btn" href="{% url 'logs:list' %}">Cancel</a>
+    </div>
+  </form>
+
+  <div class="empty-state" style="margin-top:16px;">
+    Every line that parses is recorded, whatever its HTTP status — new IPs are queued for
+    WHOIS, Iran-CIDR classification, and GeoIP enrichment in the background (usually seconds,
+    not instant). Check <a href="{% url 'ips:list' %}">IP Intelligence</a> or
+    <a href="{% url 'iran:iranian-ips' %}">Iran &gt; Iranian IPs</a> shortly after uploading.
+  </div>
+{% endblock %}

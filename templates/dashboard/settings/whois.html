@@ -15,4 +15,16 @@
     <div><div class="kv-label">Queue concurrency</div><div class="kv-value">{{ whois_queue_concurrency }}</div></div>
     <div><div class="kv-label">IPs pending a check</div><div class="kv-value">{{ whois_pending_count }}</div></div>
   </div>
+
+  <h1 style="margin-top:32px;">SOCKS Proxies</h1>
+  <div class="panel-note">
+    Proxies themselves are managed on the <a href="{% url 'whois:proxies' %}">WHOIS Proxies</a> page,
+    not here — this is just the mechanism's current state.
+  </div>
+  <div class="kv-grid" style="margin-top:16px;">
+    <div><div class="kv-label">proxychains binary (configured)</div><div class="kv-value">{{ proxychains_binary }}</div></div>
+    <div><div class="kv-label">proxychains found on PATH</div><div class="kv-value">{% if proxychains_found %}<span class="badge green">yes</span>{% else %}<span class="badge red">no</span>{% endif %}</div></div>
+    <div><div class="kv-label">Max consecutive failures</div><div class="kv-value">{{ proxy_max_failures }}</div></div>
+    <div><div class="kv-label">Proxies configured</div><div class="kv-value">{{ enabled_proxies }} enabled / {{ total_proxies }} total</div></div>
+  </div>
 {% endblock %}

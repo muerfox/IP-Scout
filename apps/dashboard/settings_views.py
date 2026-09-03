@@ -12,6 +12,7 @@ tasks the schedule already uses - it doesn't touch settings.
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from django.conf import settings
@@ -26,12 +27,14 @@ from apps.ips.models import IPAddress
 from apps.ips.services import IPIntelligenceService
 from apps.iran.models import CountryNetwork
 from apps.users.services import record_audit_log
+from apps.whois.models import ProxyEndpoint
 from apps.whois.services import WhoisService
 
 
 @login_required
 def settings_whois(request):
     resolved_binary = WhoisService._resolve_binary(settings.WHOIS_BINARY)
+    proxychains_binary = shutil.which(settings.WHOIS_PROXYCHAINS_BINARY)
     context = {
         "whois_binary": settings.WHOIS_BINARY,
         "resolved_binary": resolved_binary,
@@ -40,6 +43,11 @@ def settings_whois(request):
         "whois_cache_days": settings.WHOIS_CACHE_DAYS,
         "whois_queue_concurrency": settings.WHOIS_QUEUE_CONCURRENCY,
         "whois_pending_count": IPIntelligenceService.whois_pending_queryset().count(),
+        "proxychains_binary": settings.WHOIS_PROXYCHAINS_BINARY,
+        "proxychains_found": bool(proxychains_binary),
+        "proxy_max_failures": settings.WHOIS_PROXY_MAX_FAILURES,
+        "total_proxies": ProxyEndpoint.objects.count(),
+        "enabled_proxies": ProxyEndpoint.objects.filter(enabled=True).count(),
     }
     return render(request, "dashboard/settings/whois.html", context)
 

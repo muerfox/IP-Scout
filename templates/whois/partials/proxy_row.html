@@ -1,0 +1,17 @@
+<tr id="proxy-row-{{ proxy.pk }}">
+  <td>{{ proxy }}</td>
+  <td>{{ proxy.scheme }}</td>
+  <td class="mono">{{ proxy.host }}:{{ proxy.port }}</td>
+  <td>
+    <form method="post" action="{% url 'whois:proxy-toggle-enabled' proxy.pk %}"
+          hx-post="{% url 'whois:proxy-toggle-enabled' proxy.pk %}"
+          hx-target="#proxy-row-{{ proxy.pk }}" hx-swap="outerHTML">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm">{% if proxy.enabled %}Enabled{% else %}Disabled{% endif %}</button>
+    </form>
+  </td>
+  <td class="num">{{ proxy.total_uses }}</td>
+  <td class="num">{{ proxy.consecutive_failures }}</td>
+  <td>{{ proxy.last_used_at|default:"never" }}</td>
+  <td>{{ proxy.last_error|default:"—" }}</td>
+</tr>

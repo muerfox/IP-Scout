@@ -261,6 +261,15 @@ WHOIS_BINARY = env_str("WHOIS_BINARY", "/usr/bin/whois")
 WHOIS_TIMEOUT = env_int("WHOIS_TIMEOUT", 10)
 WHOIS_CACHE_DAYS = env_int("WHOIS_CACHE_DAYS", 7)
 
+# Public WHOIS servers rate-limit by source address - a NOC doing volume
+# lookups across many observed IPs benefits from more than one source
+# address. Proxies themselves are managed as apps.whois.models.ProxyEndpoint
+# rows (via /admin or the WHOIS Proxies page), never here; these two knobs
+# only control the mechanism. No proxies configured (the default, empty
+# state) means every lookup runs exactly as before - direct, no wrapping.
+WHOIS_PROXYCHAINS_BINARY = env_str("WHOIS_PROXYCHAINS_BINARY", "proxychains4")
+WHOIS_PROXY_MAX_FAILURES = env_int("WHOIS_PROXY_MAX_FAILURES", 5)
+
 REQUEST_RETENTION_DAYS = env_int("REQUEST_RETENTION_DAYS", 30)
 WHOIS_RETENTION_DAYS = env_int("WHOIS_RETENTION_DAYS", 180)
 IP_RETENTION_DAYS = env_int("IP_RETENTION_DAYS", 365)

@@ -369,6 +369,16 @@ discarded just because its request wasn't a 503.
    lines appended *after* you enabled monitoring are ever read. Existing
    log history is intentionally never replayed.
 
+**Already have a log file and don't want to set up SSH/server polling at
+all?** **Logs → Upload Log** parses and records a pasted or uploaded
+access log immediately, synchronously, through the same pipeline above -
+no `Server` row, SSH credentials, or Celery Beat schedule required. Every
+line that matches the selected format is recorded regardless of status,
+exactly like a polled log source; new IPs are queued for WHOIS/Iran/GeoIP
+enrichment the same way. Uploads are filed under a fixed "Manual Uploads"
+server (visible in Log Sources/Readers) so their `RequestEvent` rows have
+somewhere to attach - that server is never SSH-polled.
+
 To confirm the whole pipeline works end to end, generate real traffic
 against the monitored server after enabling monitoring and wait for the
 next 30-second poll. A log source's "Reader" status
@@ -382,15 +392,23 @@ after a few polls.
 
 Two more gaps that look like bugs but are configuration, not code:
 
-- **Iran status never triggers.** `is_iran` is driven by the
+- **Iran status never triggers.** `is_iran` is driven first by the
   `CountryNetwork` CIDR table (`Iran → CIDRs`), which ships empty by
-  design (see "Iran CIDR classification" above) — an IP's WHOIS-reported
-  country is only ever a secondary, lower-confidence fallback signal
-  when no CIDR row covers that address yet. If `Iran → CIDRs` is empty
-  or doesn't cover your traffic's ranges, populate it: manually via
-  `Iran → CIDRs → Add`, or with real RIPE NCC registry data by setting
-  `IRAN_CIDR_SOURCE=ripencc` and bootstrapping once (the monthly Beat
-  task won't seed an empty table on its own):
+  design (see "Iran CIDR classification" above), with an IP's own
+  WHOIS-reported country used as a secondary, lower-confidence fallback
+  signal when no CIDR row covers that address yet. That CIDR table now
+  also grows on its own: every successful WHOIS lookup that resolves a
+  network for an Iranian IP mirrors that CIDR into `Iran → CIDRs`
+  (`source=whois`) automatically, so once *any* IP in a /22 has been
+  WHOIS-checked, every other IP in that same range is classified by CIDR
+  containment from then on — not just its own per-IP WHOIS result. See
+  `apps.whois.network_intel.NetworkIntelService` and the **Networks**
+  page (`IP Intelligence → Networks`), which lists every CIDR range
+  WHOIS has actually observed, for any country. This still starts from
+  nothing on a brand-new install; to seed it faster, populate `Iran →
+  CIDRs` manually via `Iran → CIDRs → Add`, or with real RIPE NCC
+  registry data by setting `IRAN_CIDR_SOURCE=ripencc` and bootstrapping
+  once (the monthly Beat task won't seed an empty table on its own):
   ```bash
   python manage.py shell -c "
   from apps.iran.services import IranCIDRValidationService
@@ -409,6 +427,31 @@ Two more gaps that look like bugs but are configuration, not code:
   file (MaxMind's GeoLite2-City, or DB-IP's free City Lite database in
   the same format) to populate `latitude`/`longitude` for new IPs going
   forward.
+
+### WHOIS through a SOCKS proxy pool
+
+Public WHOIS servers rate-limit by source address, so a deployment doing
+volume lookups across many observed IPs can exhaust a single address's
+allowance. **IP Intelligence → WHOIS Proxies** (or `/admin`) manages a
+list of SOCKS proxies (`ProxyEndpoint` rows: host, port, scheme,
+optional username/password); with at least one enabled, each WHOIS
+lookup picks the least-recently-used proxy and routes through it via
+`proxychains-ng`. Nothing is auto-populated - an empty list (the default)
+means every lookup runs direct, exactly as before.
+
+Requirements:
+- `proxychains4` (part of `proxychains-ng`) installed on the host running
+  the `whois` Celery worker. If it isn't on `PATH` under that name, set
+  `WHOIS_PROXYCHAINS_BINARY`. Missing it is a real, surfaced error
+  (`WhoisRecord`/`IPAddress.whois_error`) when a proxy is configured, not
+  a silent fallback to direct.
+- Real, working SOCKS5/SOCKS4 proxies you control or are authorized to
+  use - none are bundled, matching this project's policy of never
+  shipping fabricated data or fake infrastructure.
+
+A proxy that fails `WHOIS_PROXY_MAX_FAILURES` times in a row (default 5)
+is auto-disabled and surfaces its last error on the WHOIS Proxies page;
+re-enable it there once fixed (that also resets its failure count).
 
 ## Testing
 

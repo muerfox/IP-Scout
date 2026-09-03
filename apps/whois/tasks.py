@@ -23,6 +23,7 @@ from apps.ips.services import IPIntelligenceService
 
 from .models import WhoisRecord
 from .parsers import WhoisParser
+from .proxies import ProxyPool
 from .services import WhoisService
 
 logger = logging.getLogger("ipscout.whois")
@@ -52,7 +53,10 @@ def perform_whois_lookup(self, ip_id: int, force: bool = False) -> None:
 
 
 def _run_lookup(task, ip: IPAddress) -> None:
-    result = WhoisService().lookup(ip.address)
+    proxy = ProxyPool.pick()
+    result = WhoisService().lookup(ip.address, proxy=proxy)
+    if proxy is not None:
+        ProxyPool.record_result(proxy, result.success, result.error)
     now = timezone.now()
 
     if not result.success:
@@ -104,6 +108,21 @@ def _run_lookup(task, ip: IPAddress) -> None:
     inetnum = known.get("inetnum")
     if inetnum:
         ip.cidr = _inetnum_to_cidr(inetnum)
+
+    if ip.cidr:
+        # Log the range this IP's WHOIS response actually reported, for
+        # any country - and mirror it into the Iran CIDR database when the
+        # country is IR (see NetworkIntelService's docstring for why).
+        from .network_intel import NetworkIntelService
+
+        NetworkIntelService.record(
+            ip.cidr,
+            country_code=ip.whois_country,
+            organization=ip.organization,
+            network=ip.network,
+            asn=ip.asn,
+            seen_at=now,
+        )
 
     ip.save(
         update_fields=[

@@ -33,6 +33,7 @@ NAV_TREE: list[NavItem | NavSection] = [
     ]),
     NavSection("Logs", [
         NavItem("Log Sources", "logs:list"),
+        NavItem("Upload Log", "logs:upload"),
         NavItem("Readers", "logs:readers"),
     ]),
     NavSection("IP Intelligence", [
@@ -40,6 +41,8 @@ NAV_TREE: list[NavItem | NavSection] = [
         NavItem("Countries", "ips:countries"),
         NavItem("ASNs", "ips:asns"),
         NavItem("WHOIS", "whois:list"),
+        NavItem("Networks", "whois:networks"),
+        NavItem("WHOIS Proxies", "whois:proxies"),
     ]),
     NavSection("503 Intelligence", [
         NavItem("Overview", "incidents:overview"),
