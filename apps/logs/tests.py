@@ -506,9 +506,10 @@ class LogUploadViewTests(TestCase):
                 "logtext": '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"',
             },
         )
-        self.assertRedirects(response, reverse("logs:upload"))
         self.assertEqual(RequestEvent.objects.count(), 1)
         self.assertEqual(IPAddress.objects.get().address, "1.2.3.4")
+        log_source = LogSource.objects.get()
+        self.assertRedirects(response, reverse("logs:upload-results", args=[log_source.pk]))
 
     def test_post_empty_shows_error_and_creates_nothing(self):
         response = self.client.post(reverse("logs:upload"), {"format": "combined", "logtext": "   "})
@@ -524,10 +525,10 @@ class LogUploadViewTests(TestCase):
         response = self.client.post(
             reverse("logs:upload"), {"format": "combined", "logfile": upload}
         )
-        self.assertRedirects(response, reverse("logs:upload"))
         self.assertEqual(RequestEvent.objects.count(), 1)
         log_source = LogSource.objects.get()
         self.assertEqual(log_source.name, "access.log")
+        self.assertRedirects(response, reverse("logs:upload-results", args=[log_source.pk]))
 
     def test_post_no_lines_match_format_shows_warning(self):
         response = self.client.post(
@@ -555,3 +556,66 @@ class LogUploadViewTests(TestCase):
             )
             response = self.client.get(response.url)
         self.assertContains(response, "were processed (upload was larger)")
+
+    def test_post_truncated_but_no_events_created_stays_on_upload_page(self):
+        from . import services
+
+        with patch.object(services, "MAX_UPLOAD_LINES", 1):
+            response = self.client.post(
+                reverse("logs:upload"),
+                {"format": "combined", "logtext": "garbage one\ngarbage two"},
+            )
+        self.assertRedirects(response, reverse("logs:upload"))
+
+
+class LogUploadResultsViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="results-viewer", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        server = Server.objects.create(
+            name="edge-r", hostname="r.example.com", ssh_username="deploy",
+            ssh_auth_type=Server.AuthType.PASSWORD, ssh_private_key="pw",
+        )
+        log_source = LogSource.objects.create(server=server, name="x", path="manual-upload://x")
+        response = self.client.get(reverse("logs:upload-results", args=[log_source.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_404_for_unknown_log_source(self):
+        response = self.client.get(reverse("logs:upload-results", args=[999999]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_shows_extracted_ips_and_iran_count(self):
+        from .services import ManualLogUploadService
+
+        text = "\n".join(
+            [
+                '1.2.3.4 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"',
+                '5.6.7.8 - - [26/Aug/2026:04:30:01 +0000] "GET /b HTTP/1.1" 200 1 "-" "-"',
+            ]
+        )
+        summary = ManualLogUploadService.ingest(text, "combined", label="test")
+        IPAddress.objects.filter(address="1.2.3.4").update(is_iran=True, country_code="IR")
+
+        response = self.client.get(reverse("logs:upload-results", args=[summary.log_source_id]))
+
+        self.assertContains(response, "1.2.3.4")
+        self.assertContains(response, "5.6.7.8")
+        self.assertContains(response, "1 Iranian")
+
+    def test_only_shows_ips_from_this_upload(self):
+        from .services import ManualLogUploadService
+
+        summary_a = ManualLogUploadService.ingest(
+            '1.1.1.1 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"', "combined"
+        )
+        ManualLogUploadService.ingest(
+            '2.2.2.2 - - [26/Aug/2026:04:30:00 +0000] "GET /a HTTP/1.1" 200 1 "-" "-"', "combined"
+        )
+
+        response = self.client.get(reverse("logs:upload-results", args=[summary_a.log_source_id]))
+
+        self.assertContains(response, "1.1.1.1")
+        self.assertNotContains(response, "2.2.2.2")

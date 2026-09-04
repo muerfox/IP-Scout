@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Results — IP Scout{% endblock %}
+{% block topbar_title %}Upload Results — {{ log_source.name }}{% endblock %}
+
+{% block content %}
+  <h1>Upload Results
+    <span class="subtitle">{{ total }} IP address{{ total|pluralize }} extracted · {{ iran_count }} Iranian{% if pending_count %} · {{ pending_count }} still pending WHOIS{% endif %}</span>
+  </h1>
+
+  {% if pending_count %}
+    <div class="panel-note">
+      {{ pending_count }} of these are newly seen and still awaiting background WHOIS/Iran-CIDR
+      classification — their rows update in place as results come in (usually within seconds).
+      Reload if you'd rather check all at once.
+    </div>
+  {% endif %}
+
+  {% if ips %}
+    <table class="data-table" style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Address</th>
+          <th>Version</th>
+          <th>Iran</th>
+          <th>Country</th>
+          <th>ASN</th>
+          <th>WHOIS</th>
+          <th>Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ip in ips %}
+          <tr>
+            <td class="mono"><a href="{% url 'ips:detail' ip.pk %}">{{ ip.address }}</a></td>
+            <td>IPv{{ ip.version }}</td>
+            {% include "ips/partials/iran_status.html" %}
+            <td>{{ ip.country_code|default:"—" }}</td>
+            <td>{{ ip.asn|default:"—" }}</td>
+            {% include "ips/partials/whois_status.html" %}
+            <td>{{ ip.last_seen_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">No IPs found for this upload.</div>
+  {% endif %}
+
+  <div class="form-actions" style="margin-top:16px;">
+    <a class="btn" href="{% url 'logs:upload' %}">Upload another log</a>
+    <a class="btn" href="{% url 'ips:list' %}?is_iran=true">View all Iranian IPs</a>
+  </div>
+{% endblock %}

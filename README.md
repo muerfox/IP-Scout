@@ -377,7 +377,11 @@ line that matches the selected format is recorded regardless of status,
 exactly like a polled log source; new IPs are queued for WHOIS/Iran/GeoIP
 enrichment the same way. Uploads are filed under a fixed "Manual Uploads"
 server (visible in Log Sources/Readers) so their `RequestEvent` rows have
-somewhere to attach - that server is never SSH-polled.
+somewhere to attach - that server is never SSH-polled. Submitting the form
+lands you on a results page listing every IP extracted from that specific
+upload, with Iran/WHOIS status columns that update in place as background
+enrichment finishes - no need to go hunting through IP Intelligence to see
+what a given log contained.
 
 To confirm the whole pipeline works end to end, generate real traffic
 against the monitored server after enabling monitoring and wait for the

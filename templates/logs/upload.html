@@ -48,9 +48,8 @@
   </form>
 
   <div class="empty-state" style="margin-top:16px;">
-    Every line that parses is recorded, whatever its HTTP status — new IPs are queued for
-    WHOIS, Iran-CIDR classification, and GeoIP enrichment in the background (usually seconds,
-    not instant). Check <a href="{% url 'ips:list' %}">IP Intelligence</a> or
-    <a href="{% url 'iran:iranian-ips' %}">Iran &gt; Iranian IPs</a> shortly after uploading.
+    Every line that parses is recorded, whatever its HTTP status — you'll land on a results
+    page listing every IP extracted from this upload, with its Iran/WHOIS status filling in
+    live as background enrichment finishes (usually seconds, not instant).
   </div>
 {% endblock %}

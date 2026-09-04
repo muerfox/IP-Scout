@@ -164,6 +164,7 @@ class UploadSummary:
     parse_errors: int
     new_ips: int
     truncated: bool
+    log_source_id: int | None
 
 
 class ManualLogUploadService:
@@ -248,4 +249,5 @@ class ManualLogUploadService:
             parse_errors=parse_errors,
             new_ips=new_ip_count,
             truncated=truncated,
+            log_source_id=log_source.id if events_created else None,
         )
