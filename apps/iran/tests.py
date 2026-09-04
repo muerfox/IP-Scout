@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch
+from urllib.error import URLError
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
@@ -334,7 +335,7 @@ class ClassifyIpTaskTests(TestCase):
 
 
 class RunMonthlyIranValidationTaskTests(TestCase):
-    def test_noop_when_no_iran_data_configured(self):
+    def test_noop_when_static_source_has_no_manual_data(self):
         from .tasks import run_monthly_iran_validation
 
         run_monthly_iran_validation()
@@ -346,6 +347,22 @@ class RunMonthlyIranValidationTaskTests(TestCase):
 
         run_monthly_iran_validation()
         self.assertIsNotNone(CountryNetwork.objects.get().last_verified_at)
+
+    @override_settings(IRAN_CIDR_SOURCE="ripencc")
+    @patch("apps.iran.providers.urllib.request.urlopen")
+    def test_bootstraps_from_ripencc_even_with_zero_existing_rows(self, mock_urlopen):
+        """A real external feed (unlike the static/manual source) must be
+        able to populate the table from scratch - otherwise ripencc could
+        never self-bootstrap without an operator adding a seed row by hand
+        first, defeating the point of switching to it."""
+        mock_urlopen.return_value.__enter__.return_value.read.return_value = (
+            _RIPE_STATS_FIXTURE.encode("utf-8")
+        )
+        from .tasks import run_monthly_iran_validation
+
+        run_monthly_iran_validation()
+
+        self.assertEqual(CountryNetwork.objects.filter(source="ripencc").count(), 3)
 
 
 class CountryNetworkFormTests(TestCase):
@@ -420,3 +437,42 @@ class CidrViewTests(TestCase):
     def test_iranian_ips_redirects_to_filtered_ip_list(self):
         response = self.client.get(reverse("iran:iranian-ips"))
         self.assertRedirects(response, reverse("ips:list") + "?is_iran=true")
+
+
+class CidrSyncViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="syncer", password="s3cur3-pass-1234")
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.post(reverse("iran:cidr-sync"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_get_not_allowed(self):
+        response = self.client.get(reverse("iran:cidr-sync"))
+        self.assertEqual(response.status_code, 405)
+
+    @override_settings(IRAN_CIDR_SOURCE="static")
+    def test_static_source_is_a_noop_with_info_message(self):
+        response = self.client.post(reverse("iran:cidr-sync"), follow=True)
+        self.assertContains(response, "no external feed to sync")
+        self.assertEqual(CountryNetwork.objects.count(), 0)
+
+    @override_settings(IRAN_CIDR_SOURCE="ripencc")
+    @patch("apps.iran.providers.urllib.request.urlopen")
+    def test_ripencc_sync_creates_cidrs_and_reports_a_real_summary(self, mock_urlopen):
+        mock_urlopen.return_value.__enter__.return_value.read.return_value = (
+            _RIPE_STATS_FIXTURE.encode("utf-8")
+        )
+        response = self.client.post(reverse("iran:cidr-sync"), follow=True)
+        self.assertEqual(CountryNetwork.objects.filter(source="ripencc").count(), 3)
+        self.assertContains(response, "Synced from ripencc: 3 fetched, 3 new")
+
+    @override_settings(IRAN_CIDR_SOURCE="ripencc")
+    @patch("apps.iran.providers.urllib.request.urlopen")
+    def test_network_failure_reports_a_real_error_not_fake_success(self, mock_urlopen):
+        mock_urlopen.side_effect = URLError("no route to host")
+        response = self.client.post(reverse("iran:cidr-sync"), follow=True)
+        self.assertContains(response, "Sync from ripencc failed")
+        self.assertEqual(CountryNetwork.objects.count(), 0)

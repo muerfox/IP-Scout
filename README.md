@@ -420,6 +420,10 @@ Two more gaps that look like bugs but are configuration, not code:
   print(IranCIDRValidationService.run(RipeNccDelegatedStatsProvider()))
   "
   ```
+  or, without a shell at all, by setting `IRAN_CIDR_SOURCE=ripencc` and
+  clicking **Sync from ripencc now** on the CIDRs page — the monthly Beat
+  task now bootstraps an empty table for any non-static source too,
+  instead of only ever re-validating data that already exists.
   Already-recorded IPs aren't retroactively reclassified just by adding
   CIDR data — use each IP's "Recalculate Iran" button, or re-run
   `IranCIDRService.classify(ip)` in a shell loop over `IPAddress.objects.all()`.

@@ -6,7 +6,15 @@
 {% block content %}
   <div class="toolbar">
     <h1>Iran CIDRs <span class="subtitle">{{ page_obj.paginator.count }} total</span></h1>
-    <a class="btn btn-primary" href="{% url 'iran:cidr-add' %}">Add CIDR</a>
+    <div>
+      {% if iran_cidr_source != "static" %}
+        <form method="post" action="{% url 'iran:cidr-sync' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="btn">Sync from {{ iran_cidr_source }} now</button>
+        </form>
+      {% endif %}
+      <a class="btn btn-primary" href="{% url 'iran:cidr-add' %}">Add CIDR</a>
+    </div>
   </div>
 
   <div class="panel-note">
@@ -17,7 +25,9 @@
       Active source: <strong>ripencc</strong> — entries with source
       <code>ripencc</code> are fetched from RIPE NCC's own delegated-extended
       stats file (the registry's primary allocation record); manually-added
-      entries (source <code>manual</code>) are left alone by that fetch.
+      entries (source <code>manual</code>) are left alone by that fetch. Use
+      <strong>Sync from ripencc now</strong> above to fetch immediately
+      instead of waiting for the schedule below.
     {% else %}
       Active source: <strong>{{ iran_cidr_source }}</strong>.
     {% endif %}

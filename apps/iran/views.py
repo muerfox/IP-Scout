@@ -16,6 +16,8 @@ from apps.users.services import record_audit_log
 from .export import ExportFilters, IPExportService
 from .forms import CountryNetworkForm
 from .models import CountryNetwork, IPCountryHistory
+from .providers import get_provider
+from .services import IranCIDRValidationService
 
 _EXPORT_FIELDS = (
     "address",
@@ -73,6 +75,47 @@ def cidr_toggle_enabled(request, pk):
     record_audit_log("iran_cidr.enabled" if network.enabled else "iran_cidr.disabled", obj=network)
     if request.headers.get("HX-Request"):
         return render(request, "iran/partials/cidr_row.html", {"network": network})
+    return redirect("iran:cidrs")
+
+
+@login_required
+@require_POST
+def cidr_sync(request):
+    """On-demand equivalent of the Celery Beat monthly validation job, for
+    an operator who just switched IRAN_CIDR_SOURCE and doesn't want to
+    wait for the 1st of the month (or reach for a Django shell) to see it
+    take effect. Uses whichever provider is currently configured - never a
+    hard-coded source - and reports the real fetch/create/disable counts,
+    or a real error, never a fabricated success."""
+    provider = get_provider()
+    if provider.SOURCE == "manual":
+        messages.info(
+            request,
+            "The static source has no external feed to sync - add or edit CIDRs manually below.",
+        )
+        return redirect("iran:cidrs")
+
+    try:
+        summary = IranCIDRValidationService.run(provider=provider)
+    except OSError as exc:
+        messages.error(request, f"Sync from {provider.SOURCE} failed: {exc}")
+        return redirect("iran:cidrs")
+
+    record_audit_log(
+        "iran_cidr.synced",
+        metadata={
+            "source": provider.SOURCE,
+            "fetched": summary.fetched,
+            "created": summary.created,
+            "disabled": summary.disabled,
+            "reevaluated": summary.reevaluated,
+        },
+    )
+    messages.success(
+        request,
+        f"Synced from {provider.SOURCE}: {summary.fetched} fetched, {summary.created} new, "
+        f"{summary.disabled} disabled, {summary.reevaluated} IP(s) re-checked.",
+    )
     return redirect("iran:cidrs")
 
 

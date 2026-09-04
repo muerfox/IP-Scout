@@ -9,6 +9,7 @@ urlpatterns = [
     path("cidrs/", views.cidr_list, name="cidrs"),
     path("cidrs/add/", views.cidr_create, name="cidr-add"),
     path("cidrs/<int:pk>/toggle/", views.cidr_toggle_enabled, name="cidr-toggle-enabled"),
+    path("cidrs/sync/", views.cidr_sync, name="cidr-sync"),
     path("changes/", views.changes_list, name="changes"),
     path("exports/", views.export_view, name="export"),
     path("exports/download/", views.export_download, name="export-download"),
